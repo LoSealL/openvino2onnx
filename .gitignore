@@ -1,0 +1,10 @@
+.*/
+!.github/
+*.egg-info
+__pycache__
+# pdm build tool
+.pdm-python
+__pypackages__/
+# pypa
+dist/
+build/
