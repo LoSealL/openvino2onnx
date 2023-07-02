@@ -30,7 +30,7 @@ class TestOpenvinoConvert(unittest.TestCase):
             test = runtime.compile_model(f"{tmpdir}/test.onnx")
         ref = runtime.compile_model(model_path)
 
-        inputs = np.empty(test.input().shape, dtype="float32")
+        inputs = [np.empty(i.shape, dtype="float32") for i in test.inputs]
         out_ref = ref(inputs)
         out_test = test(inputs)
         name_not_match = False

@@ -11,7 +11,7 @@ import numpy as np
 from onnx.reference import ReferenceEvaluator
 
 from openvino2onnx.builder import build
-from openvino2onnx.mapping import DTYPE2PREC
+from openvino2onnx.mapping import DTYPE2PREC, PREC2DTYPE
 
 
 def _make_output_for_node(graph: nx.DiGraph, node, port=None):
@@ -63,6 +63,9 @@ def fold_const_on_node(graph: nx.DiGraph, node, remove_nodes=True) -> np.ndarray
         const = folder.run(None, {})[0]
     if remove_nodes:
         graph.remove_nodes_from(subg)
+    for out in attrs["outputs"].values():
+        if prec := out.get("precision"):
+            const = np.array(const, dtype=PREC2DTYPE[prec])
     return const
 
 
