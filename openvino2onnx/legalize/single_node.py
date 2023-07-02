@@ -136,9 +136,25 @@ class StridedSlice(SingleNodeMutator):
         strides = get_node_on_edge(graph, node, "3")
         steps = fold_const_on_node(graph, strides)
         assert steps.ndim == 1
-        attrs["inputs"].pop("3")
-        expand_const_on_node(graph, node, np.zeros([1], "int64"), "3")
+        attrs["inputs"]["3"].update(empty=True)
         expand_const_on_node(graph, node, steps, "4")
+        begin_mask = list(map(int, attrs["begin_mask"].split(",")))
+        end_mask = list(map(int, attrs["end_mask"].split(",")))
+        if any(i != 0 for i in begin_mask + end_mask):
+            # adjust begin and end
+            begin = get_node_on_edge(graph, node, "1")
+            end = get_node_on_edge(graph, node, "2")
+            data_shape = list(map(int, attrs["inputs"]["0"]["dim"]))
+            begin_var = fold_const_on_node(graph, begin)
+            end_var = fold_const_on_node(graph, end)
+            for i, x in enumerate(begin_mask):
+                begin_var[i] = 0 if x != 0 else begin_var[i]
+            for i, x in enumerate(end_mask):
+                end_var[i] = data_shape[i] if x != 0 else end_var[i]
+            attrs["inputs"].pop("1")
+            attrs["inputs"].pop("2")
+            expand_const_on_node(graph, node, begin_var, "1")
+            expand_const_on_node(graph, node, end_var, "2")
 
 
 @legalize.register
@@ -163,3 +179,18 @@ class Interpolate(SingleNodeMutator):
         attrs["inputs"]["1"].update(empty=True)
         # make scales
         expand_const_on_node(graph, node, scales, "2")
+
+
+@legalize.register
+class Squeeze(SingleNodeMutator):
+    """Cast axis from U64 to I64"""
+
+    def __init__(self):
+        super().__init__(pattern="Squeeze")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        axis = get_node_on_edge(graph, node, "1")
+        axis_var = fold_const_on_node(graph, axis)
+        attrs["inputs"].pop("1")
+        expand_const_on_node(graph, node, axis_var.astype("int64"), "1")
