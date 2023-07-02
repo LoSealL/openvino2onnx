@@ -22,9 +22,10 @@ class Compose:
         for fn in self._fn:
             try:
                 fn(graph)
-            except:
+            except:  # noqa: E722
                 warnings.warn(f"{type(fn)} throws an exception")
                 raise
+        return graph
 
     def register(self, func):
         """Register new mutator."""

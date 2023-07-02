@@ -18,6 +18,9 @@ Home = "https://github.com/LoSealL/openvino2onnx"
 [project.optional-dependencies]
 test = ["black", "flake8", "isort", "pytest", "openvino >= 2023.0.0"]
 
+[project.scripts]
+openvino2onnx = "openvino2onnx.cli.main_cli:main"
+
 [tool.flake8]
 ignore = ['E231', 'E241']
 per-file-ignores = ['__init__.py:F401']
