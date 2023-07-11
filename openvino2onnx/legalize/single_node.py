@@ -51,6 +51,8 @@ class Reshape(SingleNodeMutator):
 
     def trans(self, graph: nx.MultiDiGraph, node):
         attrs = graph.nodes[node]
+        # treat 0 as a wildcard to copy from the input on same axis
+        special_zero = attrs["special_zero"]
         shape_node = get_node_on_edge(graph, node, "1")
         shape_is_const = False
         with suppress(Exception):
@@ -58,6 +60,10 @@ class Reshape(SingleNodeMutator):
             shape_is_const = True
         if shape_is_const:
             ref_data = np.empty(list(map(int, attrs["inputs"]["0"]["dim"])))
+            if special_zero:
+                for i, d in enumerate(shape):
+                    if d == 0:
+                        shape[i] = ref_data.shape[i]
             shape = ref_data.reshape(shape).shape
             attrs["inputs"].pop("1")
             expand_const_on_node(graph, node, np.array(shape, "int64"), "1")
