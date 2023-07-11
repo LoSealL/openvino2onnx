@@ -43,6 +43,33 @@ class ShapeOf(SingleNodeMutator):
 
 
 @legalize.register
+class Reshape(SingleNodeMutator):
+    """Calculate reshape accurate shape"""
+
+    def __init__(self):
+        super().__init__(pattern="Reshape")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        # treat 0 as a wildcard to copy from the input on same axis
+        special_zero = attrs["special_zero"]
+        shape_node = get_node_on_edge(graph, node, "1")
+        shape_is_const = False
+        with suppress(Exception):
+            shape = fold_const_on_node(graph, shape_node)
+            shape_is_const = True
+        if shape_is_const:
+            ref_data = np.empty(list(map(int, attrs["inputs"]["0"]["dim"])))
+            if special_zero:
+                for i, d in enumerate(shape):
+                    if d == 0:
+                        shape[i] = ref_data.shape[i]
+            shape = ref_data.reshape(shape).shape
+            attrs["inputs"].pop("1")
+            expand_const_on_node(graph, node, np.array(shape, "int64"), "1")
+
+
+@legalize.register
 class Unsqueeze(SingleNodeMutator):
     """legalize axes shape"""
 
@@ -155,6 +182,29 @@ class StridedSlice(SingleNodeMutator):
             attrs["inputs"].pop("2")
             expand_const_on_node(graph, node, begin_var, "1")
             expand_const_on_node(graph, node, end_var, "2")
+        if not attrs["shrink_axis_mask"]:
+            shrink_axis_mask = []
+        else:
+            shrink_axis_mask = list(map(int, attrs["shrink_axis_mask"].split(",")))
+        if any(i != 0 for i in shrink_axis_mask):
+            # add a squeeze
+            squeeze_node = f"{node}_squeeze"
+            outport = list(attrs["outputs"].keys())[0]
+            graph.add_node(
+                squeeze_node,
+                name=squeeze_node,
+                type="Squeeze",
+                version="opset1",
+                inputs={"0": attrs["outputs"][outport]},
+                outputs={"2": dict(name=f"{squeeze_node}/output2")},
+            )
+            for u, v, data in list(graph.out_edges(node, True)):
+                graph.add_edge(squeeze_node, v, src="2", dst=data["dst"])
+                graph.remove_edge(u, v)
+            graph.add_edge(node, squeeze_node, src=outport, dst="0")
+            (axis,) = np.nonzero(shrink_axis_mask)
+            expand_const_on_node(graph, squeeze_node, axis, "1")
+            attrs["shrink_axis_mask"] = ""
 
 
 @legalize.register
@@ -170,11 +220,19 @@ class Interpolate(SingleNodeMutator):
         scales_or_size = get_node_on_edge(graph, node, "1")
         scales_or_size = fold_const_on_node(graph, scales_or_size)
         # size to scales
-        input_dims = list(map(int, attrs["inputs"]["0"]["dim"]))
+        input_dims = np.array(list(map(int, attrs["inputs"]["0"]["dim"])))
         scales = scales_or_size
         with suppress(ValueError):
             np.iinfo(scales_or_size.dtype)
-            scales = np.true_divide(scales_or_size, input_dims).astype("float32")
+            if scales.size < input_dims.size:
+                scales = np.concatenate(
+                    [input_dims[: input_dims.size - scales.size], scales]
+                )
+            scales = np.true_divide(scales, input_dims).astype("float32")
+        if scales.size < input_dims.size:
+            scales = np.concatenate(
+                [input_dims[: input_dims.size - scales.size], scales]
+            )
         # make empty roi
         attrs["inputs"]["1"].update(empty=True)
         # make scales

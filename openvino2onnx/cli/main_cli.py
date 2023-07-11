@@ -11,7 +11,6 @@ from argparse import ArgumentParser
 from pathlib import Path
 
 import onnx
-from onnx.tools.replace_constants import replace_initializer_by_constant_of_shape
 
 from openvino2onnx import build, ir_to_graph
 from openvino2onnx.legalize import legalize
@@ -47,7 +46,6 @@ def main():
         graph = ir_to_graph(model_url, args.model_bin)
     graph = legalize(graph)
     model = build(graph)
-    model = replace_initializer_by_constant_of_shape(model)
     if args.output is None:
         out_file = Path(model_url).stem + ".onnx"
     else:
