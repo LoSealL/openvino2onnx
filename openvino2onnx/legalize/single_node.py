@@ -242,3 +242,53 @@ class Squeeze(SingleNodeMutator):
         axis_var = fold_const_on_node(graph, node, "1")
         attrs["inputs"].pop("1")
         expand_const_on_node(graph, node, axis_var.astype("int64"), "1")
+
+
+@legalize.register
+class Swish(SingleNodeMutator):
+    """Change swish to mul and sigmoid.
+
+    Swish(x) = x * sigmoid(x)
+    """
+
+    def __init__(self):
+        super().__init__(pattern="Swish")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        preds = {k: graph[k][node] for k in graph.predecessors(node)}
+        succs = {k: graph[node][k] for k in graph.successors(node)}
+        # remove swish
+        graph.remove_node(node)
+        # add sigmoid
+        sigmoid_node = f"{node}_sigmoid"
+        graph.add_node(
+            sigmoid_node,
+            name=sigmoid_node,
+            type="Sigmoid",
+            version="opset1",
+            inputs=copy.deepcopy(attrs["inputs"]),
+            outputs=copy.deepcopy(attrs["outputs"]),
+        )
+        # add mul
+        mul_node = f"{node}_mul"
+        graph.add_node(
+            mul_node,
+            name=mul_node,
+            type="Multiply",
+            version="opset1",
+            inputs=copy.deepcopy(attrs["inputs"]),
+            outputs=copy.deepcopy(attrs["outputs"]),
+        )
+        mul_attrs = graph.nodes[mul_node]
+        mul_attrs["inputs"]["1"] = mul_attrs["inputs"]["0"]
+        mul_attrs["inputs"]["1"].update(id=1)
+        mul_attrs["outputs"]["2"] = mul_attrs["outputs"].pop("1")
+        mul_attrs["outputs"]["2"].update(id=2, name="output2")
+        # add edges back
+        graph.add_edge(sigmoid_node, mul_node, src="1", dst="1")
+        for i in preds:
+            graph.add_edge(i, sigmoid_node, src=preds[i][0]["src"], dst="0")
+            graph.add_edge(i, mul_node, src=preds[i][0]["src"], dst="0")
+        for i in succs:
+            graph.add_edge(mul_node, i, src="2", dst=succs[i][0]["dst"])
