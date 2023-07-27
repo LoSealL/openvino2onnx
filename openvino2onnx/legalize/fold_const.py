@@ -13,6 +13,8 @@ from onnx.reference import ReferenceEvaluator
 from openvino2onnx.builder import build
 from openvino2onnx.mapping import DTYPE2PREC, PREC2DTYPE
 
+from .utils import get_node_on_edge, subgraph_successor
+
 
 def _make_output_for_node(graph: nx.DiGraph, node, port=None):
     attrs = graph.nodes[node]
@@ -32,37 +34,44 @@ def _make_output_for_node(graph: nx.DiGraph, node, port=None):
     return result_node
 
 
-def fold_const_on_node(graph: nx.DiGraph, node, remove_nodes=True) -> np.ndarray:
+def fold_const_on_node(graph: nx.DiGraph, node, port, remove_nodes=True) -> np.ndarray:
     """Fold the const path to node in the graph.
 
     Args:
         graph (nx.DiGraph): the graph
-        node (str): a node in the graph that can be folded
+        node (str): a node in the graph that can be folded on one of its port
+        port (str): port name of the node
         remove_nodes (bool, optional): If true, remove the folded node from graph.
             Defaults to True.
 
     Returns:
         ndarray: evaluated const data
     """
-    attrs = graph.nodes[node]
-    sources = nx.ancestors(graph, node)
-    subg: nx.DiGraph = nx.subgraph(graph, list(sources) + [node]).copy()
+    maybe_const = get_node_on_edge(graph, node, port)
+    attrs = graph.nodes[maybe_const]
+    sources = nx.ancestors(graph, maybe_const)
+    subg: nx.DiGraph = nx.subgraph(graph, list(sources) + [maybe_const]).copy()
     # all sources in subgraph must be Const
     for i in nx.topological_sort(subg):
         if subg.in_degree(i) != 0:
             break
         if subg.nodes[i]["type"] != "Const":
             raise RuntimeError(f"node {attrs['name']} is not constant!")
+    # check whether subgraph has multiple fanout
+    succ = subgraph_successor(graph, subg)
     if len(subg) == 1:
         # quick solution for only 1 Const
         const = graph.nodes[next(iter(subg))]["data"]
     else:
         subg.graph["input"] = []
-        subg.graph["output"] = [_make_output_for_node(subg, node)]
+        subg.graph["output"] = [_make_output_for_node(subg, maybe_const)]
         folder = ReferenceEvaluator(build(subg))
         const = folder.run(None, {})[0]
     if remove_nodes:
-        graph.remove_nodes_from(subg)
+        if len(succ) <= 1:
+            graph.remove_nodes_from(subg)
+        else:
+            graph.remove_edge(maybe_const, node)
     for out in attrs["outputs"].values():
         if prec := out.get("precision"):
             const = np.array(const, dtype=PREC2DTYPE[prec])

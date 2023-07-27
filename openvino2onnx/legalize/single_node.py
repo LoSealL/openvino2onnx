@@ -19,7 +19,6 @@ from openvino2onnx.mapping import PREC2DTYPE
 from .compose import legalize
 from .fold_const import expand_const_on_node, fold_const_on_node
 from .mutator import SingleNodeMutator
-from .utils import get_node_on_edge
 
 
 @legalize.register
@@ -53,10 +52,9 @@ class Reshape(SingleNodeMutator):
         attrs = graph.nodes[node]
         # treat 0 as a wildcard to copy from the input on same axis
         special_zero = attrs["special_zero"]
-        shape_node = get_node_on_edge(graph, node, "1")
         shape_is_const = False
         with suppress(Exception):
-            shape = fold_const_on_node(graph, shape_node)
+            shape = fold_const_on_node(graph, node, "1")
             shape_is_const = True
         if shape_is_const:
             ref_data = np.empty(list(map(int, attrs["inputs"]["0"]["dim"])))
@@ -78,8 +76,7 @@ class Unsqueeze(SingleNodeMutator):
 
     def trans(self, graph: nx.MultiDiGraph, node):
         attrs = graph.nodes[node]
-        u = get_node_on_edge(graph, node, "1")
-        axes = fold_const_on_node(graph, u)
+        axes = fold_const_on_node(graph, node, "1")
         assert axes.ndim == 1
         attrs["axes"] = axes.flatten()
         attrs["inputs"].pop("1")
@@ -128,8 +125,7 @@ class Transpose(SingleNodeMutator):
         if "perm" in attrs:
             return
         # find a solo path to input:1
-        u = get_node_on_edge(graph, node, "1")
-        const = fold_const_on_node(graph, u)
+        const = fold_const_on_node(graph, node, "1")
         assert const.ndim == 1
         attrs["inputs"].pop("1")
         attrs.update(perm=",".join(map(str, const.tolist())))
@@ -144,8 +140,7 @@ class Gather(SingleNodeMutator):
 
     def trans(self, graph: nx.MultiDiGraph, node):
         attrs = graph.nodes[node]
-        u = get_node_on_edge(graph, node, "2")
-        const = fold_const_on_node(graph, u)
+        const = fold_const_on_node(graph, node, "2")
         assert const.size == 1
         attrs["axis"] = int(const.flatten()[0])
         attrs["inputs"].pop("2")
@@ -160,8 +155,7 @@ class StridedSlice(SingleNodeMutator):
 
     def trans(self, graph: nx.MultiDiGraph, node):
         attrs = graph.nodes[node]
-        strides = get_node_on_edge(graph, node, "3")
-        steps = fold_const_on_node(graph, strides)
+        steps = fold_const_on_node(graph, node, "3")
         assert steps.ndim == 1
         attrs["inputs"]["3"].update(empty=True)
         expand_const_on_node(graph, node, steps, "4")
@@ -169,11 +163,9 @@ class StridedSlice(SingleNodeMutator):
         end_mask = list(map(int, attrs["end_mask"].split(",")))
         if any(i != 0 for i in begin_mask + end_mask):
             # adjust begin and end
-            begin = get_node_on_edge(graph, node, "1")
-            end = get_node_on_edge(graph, node, "2")
             data_shape = list(map(int, attrs["inputs"]["0"]["dim"]))
-            begin_var = fold_const_on_node(graph, begin)
-            end_var = fold_const_on_node(graph, end)
+            begin_var = fold_const_on_node(graph, node, "1")
+            end_var = fold_const_on_node(graph, node, "2")
             for i, x in enumerate(begin_mask):
                 begin_var[i] = 0 if x != 0 else begin_var[i]
             for i, x in enumerate(end_mask):
@@ -217,8 +209,7 @@ class Interpolate(SingleNodeMutator):
     def trans(self, graph: nx.MultiDiGraph, node):
         attrs = graph.nodes[node]
         # get scales_or_size
-        scales_or_size = get_node_on_edge(graph, node, "1")
-        scales_or_size = fold_const_on_node(graph, scales_or_size)
+        scales_or_size = fold_const_on_node(graph, node, "1")
         # size to scales
         input_dims = np.array(list(map(int, attrs["inputs"]["0"]["dim"])))
         scales = scales_or_size
@@ -248,7 +239,56 @@ class Squeeze(SingleNodeMutator):
 
     def trans(self, graph: nx.MultiDiGraph, node):
         attrs = graph.nodes[node]
-        axis = get_node_on_edge(graph, node, "1")
-        axis_var = fold_const_on_node(graph, axis)
+        axis_var = fold_const_on_node(graph, node, "1")
         attrs["inputs"].pop("1")
         expand_const_on_node(graph, node, axis_var.astype("int64"), "1")
+
+
+@legalize.register
+class Swish(SingleNodeMutator):
+    """Change swish to mul and sigmoid.
+
+    Swish(x) = x * sigmoid(x)
+    """
+
+    def __init__(self):
+        super().__init__(pattern="Swish")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        preds = {k: graph[k][node] for k in graph.predecessors(node)}
+        succs = {k: graph[node][k] for k in graph.successors(node)}
+        # remove swish
+        graph.remove_node(node)
+        # add sigmoid
+        sigmoid_node = f"{node}_sigmoid"
+        graph.add_node(
+            sigmoid_node,
+            name=sigmoid_node,
+            type="Sigmoid",
+            version="opset1",
+            inputs=copy.deepcopy(attrs["inputs"]),
+            outputs=copy.deepcopy(attrs["outputs"]),
+        )
+        # add mul
+        mul_node = f"{node}_mul"
+        graph.add_node(
+            mul_node,
+            name=mul_node,
+            type="Multiply",
+            version="opset1",
+            inputs=copy.deepcopy(attrs["inputs"]),
+            outputs=copy.deepcopy(attrs["outputs"]),
+        )
+        mul_attrs = graph.nodes[mul_node]
+        mul_attrs["inputs"]["1"] = mul_attrs["inputs"]["0"]
+        mul_attrs["inputs"]["1"].update(id=1)
+        mul_attrs["outputs"]["2"] = mul_attrs["outputs"].pop("1")
+        mul_attrs["outputs"]["2"].update(id=2, name="output2")
+        # add edges back
+        graph.add_edge(sigmoid_node, mul_node, src="1", dst="1")
+        for i in preds:
+            graph.add_edge(i, sigmoid_node, src=preds[i][0]["src"], dst="0")
+            graph.add_edge(i, mul_node, src=preds[i][0]["src"], dst="0")
+        for i in succs:
+            graph.add_edge(mul_node, i, src="2", dst=succs[i][0]["dst"])
