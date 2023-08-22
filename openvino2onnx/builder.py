@@ -123,13 +123,13 @@ def build(g: nx.DiGraph) -> ModelProto:
         onnx_op.attribute.extend(attrs)
         onnx_graph.node.append(onnx_op)
 
-    onnx.checker.check_graph(onnx_graph)
     model = ModelProto(
         ir_version=onnx.IR_VERSION_2020_5_8,
         producer_name="openvino2onnx",
         graph=onnx_graph,
         opset_import=[OperatorSetIdProto(version=13)],
     )
+    onnx.checker.check_model(model)
     try:
         model = onnx.shape_inference.infer_shapes(
             model, check_type=True, strict_mode=True
