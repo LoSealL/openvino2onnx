@@ -292,3 +292,64 @@ class Swish(SingleNodeMutator):
             graph.add_edge(i, mul_node, src=preds[i][0]["src"], dst="0")
         for i in succs:
             graph.add_edge(mul_node, i, src="2", dst=succs[i][0]["dst"])
+
+
+@legalize.register
+class Pad(SingleNodeMutator):
+    """Combine inputs 1 & 2 to pads"""
+
+    def __init__(self):
+        super().__init__(pattern="Pad")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        const_value = fold_const_on_node(graph, node, "3")
+        begin = fold_const_on_node(graph, node, "1")
+        end = fold_const_on_node(graph, node, "2")
+        attrs["inputs"].pop("1")
+        attrs["inputs"].pop("2")
+        attrs["inputs"].pop("3")
+        expand_const_on_node(graph, node, np.concatenate([begin, end]), "1")
+        expand_const_on_node(graph, node, const_value, "2")
+
+
+class ReduceOp(SingleNodeMutator):
+    """Until Opset 13 ReduceOp has only 1 inputs"""
+
+    def __init__(self):
+        super().__init__(pattern=self.__class__.__name__)
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        if "1" in attrs["inputs"]:
+            attrs["axes"] = fold_const_on_node(graph, node, "1")
+
+
+@legalize.register
+class ReduceMean(ReduceOp):
+    ...
+
+
+@legalize.register
+class ReduceMax(ReduceOp):
+    ...
+
+
+@legalize.register
+class ReduceMin(ReduceOp):
+    ...
+
+
+@legalize.register
+class ReduceProd(ReduceOp):
+    ...
+
+
+@legalize.register
+class ReduceSum(ReduceOp):
+    ...
+
+
+@legalize.register
+class ReduceSumSquare(ReduceOp):
+    ...
