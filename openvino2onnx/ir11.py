@@ -124,6 +124,8 @@ def ir_to_graph(
             i.tag: i.get("value")
             for i in filter(lambda x: "value" in x.keys(), rt_info.iter())
         }
+    if "name" in graph_info:
+        graph_info.pop("name")
     graph = nx.MultiDiGraph(name=name, **graph_info)
     for layer in etree.iterfind("layers/layer"):
         _add_layer(graph, layer)
