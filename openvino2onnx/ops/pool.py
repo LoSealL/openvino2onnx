@@ -54,7 +54,10 @@ class MaxPool(Node):
             )
         )
         _strides = list(map(int, self.strides.split(",")))
-        _dilations = list(map(int, self.dilations.split(",")))
+        if hasattr(self, "dilations"):
+            _dilations = list(map(int, self.dilations.split(",")))
+        else:
+            _dilations = [1, 1]
         _kernel = list(map(int, self.kernel.split(",")))
         if _ceil_mode == 1:
             _paddings = self.convert_ceil_to_floor(
