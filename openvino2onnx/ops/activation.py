@@ -14,3 +14,10 @@ class ReLU(Node):
     @property
     def type_name(self):
         return "Relu"
+
+
+@register
+class SoftMax(Node):
+    @property
+    def type_name(self) -> str:
+        return "Softmax"
