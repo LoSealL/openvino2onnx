@@ -69,7 +69,7 @@ class MaxPool(Node):
             type=AttributeProto.INT,
             i=0,
         )
-        # dilations="1, 1"
+        # dilations="1, 1" in opset 19
         dilations = AttributeProto(
             name="dilations",
             type=AttributeProto.INTS,
@@ -93,7 +93,7 @@ class MaxPool(Node):
             type=AttributeProto.INTS,
             ints=_kernel,
         )
-        return ceil_mode, dilations, pads, strides, kernel_shape
+        return ceil_mode, pads, strides, kernel_shape
 
 
 @register
