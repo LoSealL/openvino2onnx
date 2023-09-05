@@ -6,6 +6,7 @@ Copyright Wenyi Tang 2023
 
 """
 
+import io
 import itertools
 import tempfile
 from typing import Optional, Tuple
@@ -79,49 +80,59 @@ def build(g: nx.DiGraph) -> ModelProto:
         if i in g.graph["input"] or i in g.graph["output"]:
             continue
         node = g.nodes[i]
-        if node["type"] == "Const":
-            port = node["outputs"]["0"]
-            dims = map(int, port["dim"])
-            tensor = TensorProto(
-                name=node["name"],
-                dims=list(dims),
-                data_type=DTYPE2TENSORTYPE[np.dtype(PREC2DTYPE[port["precision"]])],
-                raw_data=node["data"].tobytes(),
-            )
-            onnx_graph.initializer.append(tensor)
-            continue
-        onnx_op = NodeProto(name=node["name"])
-        input_dict = {}
-        for pred in g.predecessors(i):
-            pred_node = g.nodes[pred]
-            dst = g[pred][i][0]["dst"]
-            if pred_node["type"] in ("Parameter", "Const"):
-                input_dict[dst] = pred_node["name"]
-            else:
-                res, src = find_connect_to_output(g, pred)
-                for uv in g[pred][i].values():
-                    if src == uv["src"]:
-                        # port also connects to output
-                        name = g.nodes[res]["name"]
-                    else:
-                        name = pred_node["outputs"][uv["src"]]["name"]
-                        name = f"{pred_node['name']}/{name}"
-                    input_dict[dst] = name
-        for pred in node["inputs"]:
-            if pred not in input_dict and node["inputs"][pred].get("empty"):
-                input_dict[pred] = ""
-        onnx_op.input.extend([input_dict[k] for k in sorted(input_dict)])
-        # dangled output?
-        res, src = find_connect_to_output(g, i)
-        for i, out in node["outputs"].items():
-            if i == src:
-                onnx_op.output.append(g.nodes[res]["name"])
-            else:
-                onnx_op.output.append(f"{node['name']}/{out['name']}")
-        op_type, attrs = get_onnx_optype_and_attributes(node)
-        onnx_op.op_type = op_type
-        onnx_op.attribute.extend(attrs)
-        onnx_graph.node.append(onnx_op)
+        try:
+            if node["type"] == "Const":
+                port = node["outputs"]["0"]
+                dims = map(int, port["dim"])
+                tensor = TensorProto(
+                    name=node["name"],
+                    dims=list(dims),
+                    data_type=DTYPE2TENSORTYPE[np.dtype(PREC2DTYPE[port["precision"]])],
+                    raw_data=node["data"].tobytes(),
+                )
+                onnx_graph.initializer.append(tensor)
+                continue
+            onnx_op = NodeProto(name=node["name"])
+            input_dict = {}
+            for pred in g.predecessors(i):
+                pred_node = g.nodes[pred]
+                dst = g[pred][i][0]["dst"]
+                if pred_node["type"] in ("Parameter", "Const"):
+                    input_dict[dst] = pred_node["name"]
+                else:
+                    res, src = find_connect_to_output(g, pred)
+                    for uv in g[pred][i].values():
+                        if src == uv["src"]:
+                            # port also connects to output
+                            name = g.nodes[res]["name"]
+                        else:
+                            name = pred_node["outputs"][uv["src"]]["name"]
+                            name = f"{pred_node['name']}/{name}"
+                        input_dict[dst] = name
+            for pred in node["inputs"]:
+                if pred not in input_dict and node["inputs"][pred].get("empty"):
+                    input_dict[pred] = ""
+            onnx_op.input.extend([input_dict[k] for k in sorted(input_dict)])
+            # dangled output?
+            res, src = find_connect_to_output(g, i)
+            for i, out in node["outputs"].items():
+                if i == src:
+                    onnx_op.output.append(g.nodes[res]["name"])
+                else:
+                    onnx_op.output.append(f"{node['name']}/{out['name']}")
+            op_type, attrs = get_onnx_optype_and_attributes(node)
+            onnx_op.op_type = op_type
+            onnx_op.attribute.extend(attrs)
+            onnx_graph.node.append(onnx_op)
+        except Exception:
+            errmsg = io.StringIO()
+            errmsg.write(f"error on {node['type']} node {node['name']}\n")
+            for k, v in node.items():
+                if k in ("type", "name", "data"):
+                    continue
+                errmsg.write(f"  {k}: {v}\n")
+            print(errmsg.getvalue())
+            raise
 
     model = ModelProto(
         ir_version=onnx.IR_VERSION_2020_5_8,
@@ -135,6 +146,7 @@ def build(g: nx.DiGraph) -> ModelProto:
             model, check_type=True, strict_mode=True
         )
     except onnx.shape_inference.InferenceError:
+        model = onnx.shape_inference.infer_shapes(model)
         with tempfile.NamedTemporaryFile("wb", suffix=".onnx", delete=False) as file:
             onnx.save(model, file.name)
         print("dump model to ", file.name)
