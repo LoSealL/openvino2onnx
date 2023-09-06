@@ -100,6 +100,9 @@ class MatMul(SingleNodeMutator):
                 output["dim"] = output["dim"][::-1]
                 output["name"] = "output1"
                 transpose = f"{node}_transpose_{port}"
+                ndim = len(output["dim"])
+                perm = list(range(ndim))
+                perm[-2:] = ndim - 1, ndim - 2
                 graph.add_node(
                     transpose,
                     name=f"{attrs['name']}_transpose_{port}",
@@ -107,10 +110,27 @@ class MatMul(SingleNodeMutator):
                     version="opset1",
                     inputs={"0": attrs["inputs"][order]},
                     outputs={"1": output},
-                    perm="1, 0",
+                    perm=",".join(map(str, perm)),
                 )
                 graph.add_edge(u, transpose, src=data["src"], dst=order)
                 graph.add_edge(transpose, node, src="1", dst=data["dst"])
+
+
+@legalize.register
+class GroupConvolution(SingleNodeMutator):
+    """Reshape weights to 4D and extract group attribute"""
+
+    def __init__(self):
+        super().__init__(pattern="GroupConvolution")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        weight = fold_const_on_node(graph, node, "1")
+        groups = weight.shape[0]
+        weight = weight.reshape([-1, *weight.shape[2:]])
+        attrs["inputs"].pop("1")
+        expand_const_on_node(graph, node, weight, "1")
+        attrs["group"] = groups
 
 
 @legalize.register
@@ -227,6 +247,8 @@ class Interpolate(SingleNodeMutator):
         # make empty roi
         attrs["inputs"]["1"].update(empty=True)
         # make scales
+        if "2" in attrs["inputs"]:
+            attrs["inputs"].pop("2")
         expand_const_on_node(graph, node, scales, "2")
 
 
@@ -353,3 +375,17 @@ class ReduceSum(ReduceOp):
 @legalize.register
 class ReduceSumSquare(ReduceOp):
     ...
+
+
+@legalize.register
+class VariadicSplit(SingleNodeMutator):
+    """move input axis to attribute"""
+
+    def __init__(self):
+        super().__init__(pattern="VariadicSplit")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        if "1" in attrs["inputs"]:
+            attrs["axis"] = fold_const_on_node(graph, node, "1").flatten()
+            attrs["inputs"].pop("1")
