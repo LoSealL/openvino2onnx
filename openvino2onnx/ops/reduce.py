@@ -19,9 +19,16 @@ class ReduceOp(Node):
         return self.__class__.__name__
 
     @property
+    def keepdims(self):
+        """convert keep_dims string to boolean"""
+        if isinstance(self.keep_dims, str):
+            return self.keep_dims.lower() == "true"
+        return self.keep_dims
+
+    @property
     def attributes(self) -> Iterator[AttributeProto]:
         keepdims = AttributeProto(
-            name="keepdims", type=AttributeProto.INT, i=1 if self.keep_dims else 0
+            name="keepdims", type=AttributeProto.INT, i=1 if self.keepdims else 0
         )
         if hasattr(self, "axes"):
             axes = AttributeProto(
