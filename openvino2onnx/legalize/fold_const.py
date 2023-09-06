@@ -6,11 +6,14 @@ Copyright Wenyi Tang 2023
 
 """
 
+from copy import deepcopy
+
 import networkx as nx
 import numpy as np
 from onnx.reference import ReferenceEvaluator
 
 from openvino2onnx.builder import build
+from openvino2onnx.legalize import legalize
 from openvino2onnx.mapping import DTYPE2PREC, PREC2DTYPE
 
 from .utils import get_node_on_edge, subgraph_successor
@@ -65,6 +68,7 @@ def fold_const_on_node(graph: nx.DiGraph, node, port, remove_nodes=True) -> np.n
     else:
         subg.graph["input"] = []
         subg.graph["output"] = [_make_output_for_node(subg, maybe_const)]
+        subg = legalize(deepcopy(subg))
         folder = ReferenceEvaluator(build(subg))
         const = folder.run(None, {})[0]
     if remove_nodes:
@@ -94,18 +98,16 @@ def expand_const_on_node(graph: nx.DiGraph, node, data, port=None):
         raise ValueError(f"input:{port} at {attrs['name']} is in use.")
     # make a Const
     const_node = f"{node}_const{port}"
+    prec = DTYPE2PREC[np.dtype(data.dtype).name]
+    dim = list(map(str, data.shape))
     graph.add_node(
         const_node,
         name=const_node,
         type="Const",
         version="opset1",
         shape=",".join(map(str, data.shape)),
-        outputs={
-            "0": dict(
-                precision=DTYPE2PREC[np.dtype(data.dtype).name],
-                dim=",".join(map(str, data.shape)),
-            )
-        },
+        outputs={"0": dict(precision=prec, dim=dim)},
         data=data,
     )
     graph.add_edge(const_node, node, src="0", dst=port)
+    attrs["inputs"][port] = dict(id=port, precision=prec, dim=dim)

@@ -25,4 +25,8 @@ class SingleNodeMutator:
                 # node may be removed during transformation
                 continue
             if graph.nodes[i]["type"] == self._pattern:
+                if "_visited" in graph.nodes[i]:
+                    continue
                 self.trans(graph, i)
+                if i in graph:
+                    graph.nodes[i]["_visited"] = True
