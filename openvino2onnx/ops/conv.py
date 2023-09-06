@@ -65,3 +65,16 @@ class Convolution(Node):
             s=self.trans_auto_pad(self.auto_pad).encode(),
         )
         return dilations, strides, pads, auto_pad
+
+
+@register
+class GroupConvolution(Convolution):
+    @property
+    def type_name(self):
+        return "Conv"
+
+    @property
+    def attributes(self):
+        # groups
+        group = AttributeProto(name="group", type=AttributeProto.INT, i=self.group)
+        return [*super().attributes, group]
