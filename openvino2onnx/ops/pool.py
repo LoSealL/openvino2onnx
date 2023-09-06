@@ -70,7 +70,7 @@ class MaxPool(Node):
             i=0,
         )
         # dilations="1, 1" in opset 19
-        dilations = AttributeProto(
+        dilations = AttributeProto(  # noqa
             name="dilations",
             type=AttributeProto.INTS,
             ints=_dilations,
