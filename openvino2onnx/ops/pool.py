@@ -57,7 +57,7 @@ class MaxPool(Node):
         )
         _strides = list(map(int, self.strides.split(",")))
         if hasattr(self, "dilations"):
-            _dilations = list(map(int, self.dilations.split(",")))
+            _dilations = list(map(int, map(float, self.dilations.split(","))))
         else:
             _dilations = [1, 1]
         _kernel = list(map(int, self.kernel.split(",")))
