@@ -10,7 +10,27 @@ from . import Node, register
 
 
 @register
+class Clamp(Node):
+    """https://onnx.ai/onnx/operators/onnx__Clip.html"""
+
+    @property
+    def type_name(self) -> str:
+        return "Clip"
+
+
+@register
+class PReLU(Node):
+    """https://onnx.ai/onnx/operators/onnx__PRelu.html"""
+
+    @property
+    def type_name(self) -> str:
+        return "PRelu"
+
+
+@register
 class ReLU(Node):
+    """https://onnx.ai/onnx/operators/onnx__Relu.html"""
+
     @property
     def type_name(self):
         return "Relu"
@@ -18,6 +38,8 @@ class ReLU(Node):
 
 @register
 class SoftMax(Node):
+    """https://onnx.ai/onnx/operators/onnx__Softmax.html"""
+
     @property
     def type_name(self) -> str:
         return "Softmax"

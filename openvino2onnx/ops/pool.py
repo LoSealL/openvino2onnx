@@ -46,7 +46,9 @@ class MaxPool(Node):
 
     @property
     def attributes(self):
-        _ceil_mode = self.trans_ceil_mode(self.rounding_type)
+        _ceil_mode = 0
+        if hasattr(self, "rounding_type"):
+            _ceil_mode = self.trans_ceil_mode(self.rounding_type)
         _shape = list(map(int, self.inputs["0"]["dim"]))
         _paddings = list(
             chain(

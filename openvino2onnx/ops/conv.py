@@ -64,7 +64,9 @@ class Convolution(Node):
             type=AttributeProto.STRING,
             s=self.trans_auto_pad(self.auto_pad).encode(),
         )
-        return dilations, strides, pads, auto_pad
+        if self.trans_auto_pad(self.auto_pad) == "NOTSET":
+            return dilations, strides, pads, auto_pad
+        return dilations, strides, auto_pad
 
 
 @register

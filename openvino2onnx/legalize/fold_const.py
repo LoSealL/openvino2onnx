@@ -93,7 +93,7 @@ def expand_const_on_node(graph: nx.DiGraph, node, data, port=None):
     """
     attrs = graph.nodes[node]
     if port is None:
-        port = len(attrs["inputs"])
+        port = str(len(attrs["inputs"]))
     if port in attrs["inputs"]:
         raise ValueError(f"input:{port} at {attrs['name']} is in use.")
     # make a Const
