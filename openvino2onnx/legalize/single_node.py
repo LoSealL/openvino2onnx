@@ -6,7 +6,7 @@ Copyright Wenyi Tang 2023
 
 Split IR op to more than 1 onnx op
 """
-
+# pylint: disable=missing-function-docstring
 import copy
 from contextlib import suppress
 from itertools import product
@@ -433,3 +433,70 @@ class Clamp(SingleNodeMutator):
         max_value = np.array(max_value, dtype=dtype)
         expand_const_on_node(graph, node, min_value)
         expand_const_on_node(graph, node, max_value)
+
+
+@legalize.register
+class FakeQuantizeQDQ(SingleNodeMutator):
+    """Transmit fake quantize to QDQ nodes.
+
+    There's a bug in onnx that DequanzeLinear doesn't support fp16 well:
+    https://github.com/onnx/onnx/issues/5704
+    """
+
+    def __init__(self):
+        super().__init__(pattern="FakeQuantize")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        levels = int(attrs.get("levels", 256))
+        nbits = int(np.log2(levels))
+        assert nbits in (8, 16, 32)
+        input_low = fold_const_on_node(graph, node, "1").squeeze()
+        input_high = fold_const_on_node(graph, node, "2").squeeze()
+        output_low = fold_const_on_node(graph, node, "3").squeeze()
+        output_high = fold_const_on_node(graph, node, "4").squeeze()
+        for inp in ("1", "2", "3", "4"):
+            attrs["inputs"].pop(inp)
+        # keep old edges
+        preds = {k: graph[k][node] for k in graph.predecessors(node)}
+        succs = {k: graph[node][k] for k in graph.successors(node)}
+        # remove fake quantize
+        graph.remove_node(node)
+        # add QuantizeLinear
+        q_node = f"{node}_q"
+        graph.add_node(
+            q_node,
+            name=q_node,
+            type="QuantizeLinear",
+            version="opset1",
+            inputs=copy.deepcopy(attrs["inputs"]),
+            outputs=copy.deepcopy(attrs["outputs"]),
+        )
+        # add DequantizeLinear
+        dq_node = f"{node}_dq"
+        graph.add_node(
+            dq_node,
+            name=dq_node,
+            type="DequantizeLinear",
+            version="opset1",
+            inputs=copy.deepcopy(attrs["inputs"]),
+            outputs=copy.deepcopy(attrs["outputs"]),
+        )
+        scale_prec = PREC2DTYPE[attrs["outputs"]["5"].get("precision", "FP32")]
+        zero_prec = np.iinfo(f"uint{nbits}").dtype
+        scales = ((input_high - input_low) / (levels - 1)).astype(scale_prec)
+        zero_points = np.rint((levels - 1) * input_low / (input_low - input_high))
+        zero_points = zero_points.astype(zero_prec)
+        expand_const_on_node(graph, q_node, scales, "1")
+        expand_const_on_node(graph, q_node, zero_points, "2")
+        scales = ((output_high - output_low) / (levels - 1)).astype(scale_prec)
+        zero_points = np.rint((levels - 1) * output_low / (output_low - output_high))
+        zero_points = zero_points.astype(zero_prec)
+        expand_const_on_node(graph, dq_node, scales, "1")
+        expand_const_on_node(graph, dq_node, zero_points, "2")
+        graph.add_edge(q_node, dq_node, src="5", dst="0")
+        # restore old edges
+        for i in preds:
+            graph.add_edge(i, q_node, src=preds[i][0]["src"], dst="0")
+        for i in succs:
+            graph.add_edge(dq_node, i, src="5", dst=succs[i][0]["dst"])
