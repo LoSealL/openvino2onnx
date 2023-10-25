@@ -7,6 +7,6 @@ Copyright Wenyi Tang 2023
 """
 
 from .compose import legalize
-from .single_node import MatMul, Transpose
+from .single_node import *  # noqa: F403
 
-__all__ = ["legalize", "MatMul", "Transpose"]
+__all__ = ["legalize"]
