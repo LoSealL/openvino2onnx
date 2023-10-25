@@ -250,6 +250,11 @@ class Interpolate(SingleNodeMutator):
         if "2" in attrs["inputs"]:
             attrs["inputs"].pop("2")
         expand_const_on_node(graph, node, scales, "2")
+        # axes
+        if "3" in attrs["inputs"]:
+            axes = fold_const_on_node(graph, node, "3")
+            attrs["inputs"].pop("3")
+            assert tuple(axes) == (2, 3)
 
 
 @legalize.register
@@ -389,3 +394,42 @@ class VariadicSplit(SingleNodeMutator):
         if "1" in attrs["inputs"]:
             attrs["axis"] = fold_const_on_node(graph, node, "1").flatten()
             attrs["inputs"].pop("1")
+
+
+@legalize.register
+class PReLU(SingleNodeMutator):
+    """Legalize parameters data type for PRelu"""
+
+    def __init__(self):
+        super().__init__(pattern="PReLU")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        if prec := attrs["outputs"]["2"].get("precision"):
+            prec = PREC2DTYPE[prec]
+            parameter = fold_const_on_node(graph, node, "1").astype(prec)
+            attrs["inputs"].pop("1")
+            expand_const_on_node(graph, node, parameter, "1")
+
+
+@legalize.register
+class Clamp(SingleNodeMutator):
+    """Transmit attribute of clamp node to input ports"""
+
+    def __init__(self):
+        super().__init__(pattern="Clamp")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        min_value = float(attrs["min"])
+        max_value = float(attrs["max"])
+        if prec := attrs["outputs"]["1"].get("precision"):
+            dtype = PREC2DTYPE[prec]
+        elif prec := attrs["inputs"]["0"].get("precision"):
+            dtype = PREC2DTYPE[prec]
+        else:
+            raise ValueError("Can't deduce min/max data type of clip node")
+        min_value = np.array(min_value, dtype=dtype)
+        max_value = np.array(max_value, dtype=dtype)
+        expand_const_on_node(graph, node, min_value)
+        expand_const_on_node(graph, node, max_value)

@@ -46,7 +46,7 @@ def find_connect_to_output(graph: nx.DiGraph, node: str) -> Tuple[Optional[str],
     return None, ""
 
 
-def build(g: nx.DiGraph) -> ModelProto:
+def build(g: nx.DiGraph) -> ModelProto:  # noqa: C901
     """Build a graph to onnx model.
 
     The graph is a DiGraph object parsed from :func:`~openvino2onnx.ir11.ir_to_graph`.
@@ -66,8 +66,10 @@ def build(g: nx.DiGraph) -> ModelProto:
     for i in itertools.chain(g.graph["input"], g.graph["output"]):
         attr = g.nodes[i]
         port = attr["outputs"]["0"] if i in g.graph["input"] else attr["inputs"]["0"]
-        precision = port.get("precision", "FP32")
-        tensor_type = DTYPE2TENSORTYPE[np.dtype(PREC2DTYPE[precision])]
+        if precision := port.get("precision"):
+            tensor_type = DTYPE2TENSORTYPE[np.dtype(PREC2DTYPE[precision])]
+        else:
+            tensor_type = None
         dims = [TensorShapeProto.Dimension(dim_value=int(i)) for i in port["dim"]]
         tensor = TypeProto.Tensor(elem_type=tensor_type)
         tensor.shape.dim.extend(dims)
@@ -83,7 +85,12 @@ def build(g: nx.DiGraph) -> ModelProto:
         attr = g.nodes[i]
         try:
             if attr["type"] == "Const":
-                port = attr["outputs"]["0"]
+                if len(attr["outputs"]) != 1:
+                    raise RuntimeError(
+                        "Expect Const's output port number is 1, "
+                        f"but there are {len(attr['outputs'])} ports"
+                    )
+                port = list(attr["outputs"].values())[0]
                 dims = map(int, port["dim"])
                 tensor = TensorProto(
                     name=attr["name"],
@@ -142,7 +149,6 @@ def build(g: nx.DiGraph) -> ModelProto:
         graph=onnx_graph,
         opset_import=[OperatorSetIdProto(version=13)],
     )
-    onnx.checker.check_model(model)
     try:
         model = onnx.shape_inference.infer_shapes(
             model, check_type=True, strict_mode=True
@@ -153,4 +159,5 @@ def build(g: nx.DiGraph) -> ModelProto:
             onnx.save(model, file.name)
         print("dump model to ", file.name)
         raise
+    onnx.checker.check_model(model)
     return model
