@@ -26,7 +26,8 @@ def parse_args():
         "--opset-version",
         "--opset",
         type=int,
-        choices=(9, 10, 11, 12, 13),
+        choices=(9, 10, 11, 12, 13, 19),
+        default=13,
         help="specify a version number of onnx opset",
     )
     return parser.parse_args()
@@ -45,7 +46,7 @@ def main():
     else:
         graph = ir_to_graph(model_url, args.model_bin)
     graph = legalize(graph)
-    model = build(graph)
+    model = build(graph, version=args.opset_version)
     if args.output is None:
         out_file = Path(model_url).stem + ".onnx"
     else:

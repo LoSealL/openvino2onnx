@@ -46,7 +46,7 @@ def find_connect_to_output(graph: nx.DiGraph, node: str) -> Tuple[Optional[str],
     return None, ""
 
 
-def build(g: nx.DiGraph) -> ModelProto:  # noqa: C901
+def build(g: nx.DiGraph, version: int = 13) -> ModelProto:  # noqa: C901
     """Build a graph to onnx model.
 
     The graph is a DiGraph object parsed from :func:`~openvino2onnx.ir11.ir_to_graph`.
@@ -55,6 +55,7 @@ def build(g: nx.DiGraph) -> ModelProto:  # noqa: C901
 
     Args:
         g (nx.DiGraph): the graph
+        version (int): specify onnx import opset version
 
     Returns:
         onnx.ModelProto: onnx model
@@ -144,10 +145,10 @@ def build(g: nx.DiGraph) -> ModelProto:  # noqa: C901
             raise
 
     model = ModelProto(
-        ir_version=onnx.IR_VERSION_2020_5_8,
+        ir_version=onnx.IR_VERSION,
         producer_name="openvino2onnx",
         graph=onnx_graph,
-        opset_import=[OperatorSetIdProto(version=13)],
+        opset_import=[OperatorSetIdProto(version=version)],
     )
     try:
         model = onnx.shape_inference.infer_shapes(
