@@ -30,6 +30,11 @@ def parse_args():
         default=13,
         help="specify a version number of onnx opset",
     )
+    parser.add_argument(
+        "--fp32",
+        action="store_true",
+        help="a flag to forcely convert float16 to float32",
+    )
     return parser.parse_args()
 
 
@@ -42,9 +47,9 @@ def main():
 
         with tempfile.TemporaryDirectory() as tmpdir:
             model_url = download_from_omz_link(model_url, tmpdir)
-            graph = ir_to_graph(model_url)
+            graph = ir_to_graph(model_url, to_fp32=args.fp32)
     else:
-        graph = ir_to_graph(model_url, args.model_bin)
+        graph = ir_to_graph(model_url, args.model_bin, args.fp32)
     graph = legalize(graph)
     model = build(graph, version=args.opset_version)
     if args.output is None:

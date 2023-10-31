@@ -60,7 +60,7 @@ def _add_edge(graph: nx.DiGraph, edge):
     graph.add_edge(beg, end, src=edge.get("from-port"), dst=edge.get("to-port"))
 
 
-def _load_const(graph, model_bin):
+def _load_const(graph, model_bin, to_fp32):
     for node in graph:
         try:
             if graph.nodes[node]["type"] != "Const":
@@ -75,6 +75,9 @@ def _load_const(graph, model_bin):
                 shape = [-1]
             raw = np.fromfile(model_bin, dtype="uint8", count=size, offset=offset)
             data = np.frombuffer(raw.tobytes(), dtype=dtype).reshape(shape)
+            if to_fp32 and data.dtype == np.float16:
+                const_node["element_type"] = "f32"
+                data = data.astype(np.float32)
             const_node["data"] = data
         except Exception:
             print(f"exceptions on node:{node} {graph.nodes[node]['name']}")
@@ -93,8 +96,18 @@ def _set_input_and_output(graph):
     graph.graph["output"] = outputs
 
 
+def _node_output_to_fp32(graph):
+    for node in graph:
+        attrs = graph.nodes[node]
+        for output in attrs.get("outputs", {}):
+            if attrs["outputs"][output].get("precision") == "FP16":
+                attrs["outputs"][output]["precision"] = "FP32"
+
+
 def ir_to_graph(
-    model_path: Union[str, PathLike], model_bin: Optional[Union[str, PathLike]] = None
+    model_path: Union[str, PathLike],
+    model_bin: Optional[Union[str, PathLike]] = None,
+    to_fp32: bool = False,
 ) -> Union[nx.MultiDiGraph, nx.DiGraph]:
     """Parse OpenVINO IR format XML to ``DiGraph`` or ``MultiDiGraph``.
 
@@ -102,6 +115,7 @@ def ir_to_graph(
         model_path (Union[str, PathLike]): A URL to model xml file.
         model_bin (Optional[Union[str, PathLike]], optional): A URL to model bin file.
             If not specified, search at the same directory of xml file with same name.
+        to_fp32 (bool, optional): A flag to forcely convert fp16 data to fp32.
 
     Raises:
         NotImplementedError: If IR version it not supported.
@@ -130,8 +144,11 @@ def ir_to_graph(
     for layer in etree.iterfind("layers/layer"):
         _add_layer(graph, layer)
     if model_bin is not None:
-        _load_const(graph, model_bin)
+        _load_const(graph, model_bin, to_fp32)
     for edge in etree.iterfind("edges/edge"):
         _add_edge(graph, edge)
     _set_input_and_output(graph)
+    if to_fp32:
+        _node_output_to_fp32(graph)
+        graph.graph["force_fp32"] = True
     return graph
