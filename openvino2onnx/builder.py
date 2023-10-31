@@ -63,7 +63,7 @@ def build(g: nx.DiGraph, version: int = 13) -> ModelProto:  # noqa: C901
     onnx_graph = GraphProto(
         name="openvino2onnx", doc_string=r"ONNX graph converted from OpenVino IR"
     )
-
+    force_fp32 = g.graph.get("force_fp32")
     for i in itertools.chain(g.graph["input"], g.graph["output"]):
         attr = g.nodes[i]
         port = attr["outputs"]["0"] if i in g.graph["input"] else attr["inputs"]["0"]
@@ -71,6 +71,8 @@ def build(g: nx.DiGraph, version: int = 13) -> ModelProto:  # noqa: C901
             tensor_type = DTYPE2TENSORTYPE[np.dtype(PREC2DTYPE[precision])]
         else:
             tensor_type = None
+        if tensor_type == DTYPE2TENSORTYPE[np.dtype("float16")] and force_fp32:
+            tensor_type = DTYPE2TENSORTYPE[np.dtype("float32")]
         dims = [TensorShapeProto.Dimension(dim_value=int(i)) for i in port["dim"]]
         tensor = TypeProto.Tensor(elem_type=tensor_type)
         tensor.shape.dim.extend(dims)
