@@ -102,6 +102,8 @@ def _node_output_to_fp32(graph):
         for output in attrs.get("outputs", {}):
             if attrs["outputs"][output].get("precision") == "FP16":
                 attrs["outputs"][output]["precision"] = "FP32"
+        if attrs["type"] == "Convert":
+            attrs["destination_type"] = "f32"
 
 
 def ir_to_graph(
