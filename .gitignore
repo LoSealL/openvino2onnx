@@ -8,3 +8,6 @@ __pypackages__/
 # pypa
 dist/
 build/
+tests/models/
+!tests/models/.gitkeep
+!tests/models/model.list
