@@ -9,6 +9,7 @@ Copyright Wenyi Tang 2023
 import io
 import itertools
 import tempfile
+from contextlib import suppress
 from typing import Optional, Tuple
 
 import networkx as nx
@@ -157,7 +158,8 @@ def build(g: nx.DiGraph, version: int = 13) -> ModelProto:  # noqa: C901
             model, check_type=True, strict_mode=True
         )
     except onnx.shape_inference.InferenceError:
-        model = onnx.shape_inference.infer_shapes(model)
+        with suppress(Exception):
+            model = onnx.shape_inference.infer_shapes(model)
         with tempfile.NamedTemporaryFile("wb", suffix=".onnx", delete=False) as file:
             onnx.save(model, file.name)
         print("dump model to ", file.name)
