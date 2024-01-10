@@ -6,6 +6,9 @@ Copyright Wenyi Tang 2023
 
 """
 
+from contextlib import suppress
+from typing import Literal
+
 import networkx as nx
 
 
@@ -35,3 +38,16 @@ def subgraph_successor(graph: nx.DiGraph, subgraph: nx.DiGraph):
                 if v not in subgraph:
                     succ.append(v)
     return succ
+
+
+def text_to_boolean(text: Literal["0", "1", "false", "true"]) -> bool:
+    """Convert common text to bool
+
+    Args:
+        text (str): integer string or false/true literals
+    """
+
+    with suppress(ValueError):
+        integer = int(text)
+        return bool(integer)
+    return text.lower() == "true"
