@@ -6,19 +6,23 @@ Copyright Wenyi Tang 2023
 
 Split IR op to more than 1 onnx op
 """
-# pylint: disable=missing-function-docstring
+# pylint: disable=missing-function-docstring, missing-class-docstring
+
 import copy
+import warnings
 from contextlib import suppress
 from itertools import product
 
 import networkx as nx
 import numpy as np
+import onnx
 
 from openvino2onnx.mapping import PREC2DTYPE
 
 from .compose import legalize
-from .fold_const import expand_const_on_node, fold_const_on_node
+from .fold_const import expand_const_on_node, fold_const_on_node, make_output_for_node
 from .mutator import SingleNodeMutator
+from .utils import get_node_on_edge, text_to_boolean
 
 
 @legalize.register
@@ -500,3 +504,97 @@ class FakeQuantizeQDQ(SingleNodeMutator):
             graph.add_edge(i, q_node, src=preds[i][0]["src"], dst="0")
         for i in succs:
             graph.add_edge(dq_node, i, src="5", dst=succs[i][0]["dst"])
+
+
+@legalize.register
+class PriorBoxClustered(SingleNodeMutator):
+    """Fold PriorBoxClustered node to a constant."""
+
+    def __init__(self):
+        super().__init__(pattern="PriorBoxClustered")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        # widths         Desired widths of prior boxes
+        # heights        Desired heights of prior boxes
+        # clip           Clip output to [0,1]
+        # step_widths    Distance between prior box centers
+        # step_heights   Distance between prior box centers
+        # step           Distance between prior box centers (when step_w = step_h)
+        # offset         Box offset relative to top center of image
+        # variances      Values to adjust prior boxes with
+        attrs = graph.nodes[node]
+        widths = list(map(float, attrs["width"].split(",")))
+        heights = list(map(float, attrs["height"].split(",")))
+        clip = text_to_boolean(attrs.get("clip", "1"))
+        step_widths = float(attrs.get("step_w", "0"))
+        step_heights = float(attrs.get("step_h", "0"))
+        step = float(attrs.get("step", "0"))
+        offset = float(attrs.get("offset", "0"))
+        variances = list(map(float, attrs.get("variance", "").split(",")))
+        if len(widths) != len(heights):
+            raise ValueError(
+                f"Size of heights vector: {heights}"
+                f" doesn't match size of widths vector: {widths}"
+            )
+        if len(variances) == 0:
+            variances.append(0.1)
+        if len(variances) not in (1, 4):
+            raise ValueError(f"variance size must be 0, 1 or 4, got {variances}")
+        if step_widths == 0:
+            step_widths = step
+        if step_heights == 0:
+            step_heights = step
+
+        prec = attrs["outputs"]["2"].get("precision", "FP32")
+        anchers = self._fold_anchers(
+            graph,
+            node,
+            widths,
+            heights,
+            step_widths,
+            step_heights,
+            variances,
+            offset,
+            clip,
+        ).astype(PREC2DTYPE[prec])
+        attrs.clear()
+        graph.add_node(
+            node,
+            name=node,
+            type="Const",
+            version="opset1",
+            shape=",".join(map(str, anchers.shape)),
+            outputs={"0": dict(precision=prec, dim=list(map(str, anchers.shape)))},
+            data=anchers,
+        )
+        # clear predecessors
+        graph.remove_nodes_from(graph.predecessors(node))
+
+    def _fold_anchers(
+        self, graph, node, width, height, step_w, step_h, variance, offset, clip
+    ):
+        # feature map size
+        data_size = fold_const_on_node(graph, node, "0")
+        # image size
+        img_size = fold_const_on_node(graph, node, "1")
+        layer_h, layer_w = data_size
+        img_h, img_w = img_size
+        if step_w == 0 and step_h == 0:
+            step_w = img_w / layer_w
+            step_h = img_h / layer_h
+        x, y = np.meshgrid(range(layer_h), range(layer_w))
+        grid = np.stack([x, y], axis=-1)
+        center = (grid + offset) * (step_w, step_h)
+        # [h, w, priors, 2]
+        centers = np.tile(center[..., None], len(width)).transpose([0, 1, 3, 2])
+        box_size = np.stack([width, height], -1)
+        x0y0 = (centers - box_size / 2) / (img_w, img_h)
+        x1y1 = (centers + box_size / 2) / (img_w, img_h)
+        if clip:
+            x0y0 = np.clip(x0y0, 0, 1)
+            x1y1 = np.clip(x1y1, 0, 1)
+        anchers = np.concatenate([x0y0, x1y1], axis=-1).flatten()
+        if len(variance) == 1:
+            variance = np.tile(variance, 4)
+        variance = np.tile(variance, anchers.size // 4).flatten()
+        return np.stack([anchers, variance])
