@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2023
+Copyright Wenyi Tang 2023-2024
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -66,7 +66,11 @@ class Reshape(SingleNodeMutator):
                 for i, d in enumerate(shape):
                     if d == 0:
                         shape[i] = ref_data.shape[i]
-            shape = ref_data.reshape(shape).shape
+            # validation test
+            ref_data.reshape(shape)
+            # note "-1" in original shape can't be replaced because shape can be
+            # changed in onnx model
+            # If you need to fix -1 to positive number, use a pass in onnx2onnx.
             attrs["inputs"].pop("1")
             expand_const_on_node(graph, node, np.array(shape, "int64"), "1")
 
