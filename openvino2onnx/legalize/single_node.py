@@ -598,3 +598,106 @@ class PriorBoxClustered(SingleNodeMutator):
             variance = np.tile(variance, 4)
         variance = np.tile(variance, anchers.size // 4).flatten()
         return np.stack([anchers, variance])
+
+
+@legalize.register
+class DetectionOutput(SingleNodeMutator):
+    """Tear DetectionOutput to Decoder and NMS.
+
+    Note:
+
+        Due to implementation limitation, for now the DetectionOutput operation needs
+        manuall steps.
+
+        During the conversion, DetectionOutput is removed and its input ports is set
+        to be graph outputs. And a dedicated subgraph representing Decoder in the
+        DetectionOutput is generated. This step needs pytorch module.
+
+        A helper script "compose.py" is generated to help merge converted graph and
+        the subgraph to a composed graph.
+
+    Note:
+
+        NMS is not implemented yet.
+
+    Note:
+
+        Multiclass of DetectionOutput is not tested.
+    """
+
+    def __init__(self):
+        super().__init__(pattern="DetectionOutput")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        attrs = graph.nodes[node]
+        if len(attrs["inputs"]) != 3:
+            raise RuntimeError(
+                "DetectionOutput with auxiliary predictions is not supported!"
+            )
+        # if downstream node is output
+        for succ in list(graph.successors(node)):
+            if succ in graph.graph["output"]:
+                graph.graph["output"].remove(succ)
+                graph.remove_node(succ)
+        locations = get_node_on_edge(graph, node, "0")
+        confidences = get_node_on_edge(graph, node, "1")
+        priors = get_node_on_edge(graph, node, "2")
+        graph.graph["output"].append(
+            make_output_for_node(graph, locations, name="locations")
+        )
+        graph.graph["output"].append(
+            make_output_for_node(graph, confidences, name="confidences")
+        )
+        graph.graph["output"].append(make_output_for_node(graph, priors, name="priors"))
+        graph.remove_node(node)
+        try:
+            attrs.update(model_name=graph.graph["model_name"])
+            self.export_self(attrs)
+        except Exception as ex:  # pylint: disable=broad-exception-caught
+            warnings.warn("Can't export DetectionOutput node, delete it from the graph")
+            print(ex)
+
+    def export_self(self, attrs):
+        # pylint: disable=import-outside-toplevel
+        from .detection_output import DetectionOutput as _DetectionOutput
+
+        loc_shape = list(map(int, attrs["inputs"]["0"]["dim"]))
+        class_shape = list(map(int, attrs["inputs"]["1"]["dim"]))
+        prior_shape = list(map(int, attrs["inputs"]["2"]["dim"]))
+        out_shape = list(map(int, attrs["outputs"]["3"]["dim"]))
+        mod = _DetectionOutput(attrs, loc_shape, prior_shape, class_shape, out_shape)
+        name = attrs["name"].replace(":", "_").replace("/", ".")
+        model_name = attrs["model_name"]
+        onnx.save_model(mod.export(loc_shape, prior_shape, class_shape), f"{name}.onnx")
+        merge_code = f"""
+import onnx
+from onnx.helper import make_model
+from onnx.compose import merge_graphs
+
+a = onnx.load_model("{model_name}.onnx")
+b = onnx.load_model("{name}.onnx")
+c = merge_graphs(
+    a.graph,
+    b.graph,
+    [
+        ("locations", "locations"),
+        ("priors", "priors"),
+        ("confidences", "confidences"),
+    ],
+)
+c = make_model(c, opset_imports=a.opset_import)
+onnx.checker.check_model(c)
+onnx.save_model(c, "{model_name}_composed.onnx")
+"""
+        print(
+            f"DetectionOutput node saved to {name}.onnx, "
+            "use following codes to combine converted graph and DetectionOutput node"
+            f"{merge_code}"
+        )
+        with open("compose.py", "w", encoding="utf-8") as code_file:
+            code_file.writelines(
+                ["#!/usr/bin/env python\n", "# -*- coding: utf-8 -*-\n"]
+            )
+            code_file.write(merge_code)
+            # one time execution
+            code_file.writelines(["import os\n", "os.remove(__file__)\n"])
