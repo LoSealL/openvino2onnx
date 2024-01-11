@@ -19,11 +19,22 @@ from openvino2onnx.mapping import DTYPE2PREC, PREC2DTYPE
 from .utils import get_node_on_edge, subgraph_successor
 
 
-def _make_output_for_node(graph: nx.DiGraph, node, port=None):
+def make_output_for_node(graph: nx.DiGraph, node, port=None, name=None):
+    """Make node as the output of the graph.
+
+    Args:
+        graph (nx.DiGraph): the graph
+        node (str): a node in the graph that its output port is bound to graph output
+        port (str, optional): port name of the node output. Defaults to None.
+        name (str, optional): name of the output. Defaults to None.
+
+    Returns:
+        str: name of the output node
+    """
     attrs = graph.nodes[node]
     if port is None:
         port = list(attrs["outputs"].keys())[0]
-    result_node = f"{node}_result{port}"
+    result_node = name or f"{node}_result{port}"
     input_port = attrs["outputs"][port]
     input_port.update(id="0", name=result_node)
     graph.add_node(
@@ -67,7 +78,7 @@ def fold_const_on_node(graph: nx.DiGraph, node, port, remove_nodes=True) -> np.n
         const = graph.nodes[next(iter(subg))]["data"]
     else:
         subg.graph["input"] = []
-        subg.graph["output"] = [_make_output_for_node(subg, maybe_const)]
+        subg.graph["output"] = [make_output_for_node(subg, maybe_const)]
         subg = legalize(deepcopy(subg))
         folder = ReferenceEvaluator(build(subg))
         const = folder.run(None, {})[0]
