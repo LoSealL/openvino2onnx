@@ -5,6 +5,7 @@ Copyright Wenyi Tang 2023
 :Email: wenyitang@outlook.com
 
 """
+# pylint: disable=W0718
 
 import warnings
 from typing import Iterator
@@ -19,12 +20,15 @@ class Compose:
         self._fn = list(filter(callable, mutators))
 
     def __call__(self, graph):
+        error_msg = []
         for fn in self._fn:
             try:
                 fn(graph)
-            except:  # noqa: E722
+            except Exception as ex:  # noqa: E722
                 warnings.warn(f"{type(fn)} throws an exception")
-                raise
+                error_msg.append(str(ex))
+        if error_msg:
+            raise RuntimeError("\n\n".join(error_msg))
         return graph
 
     def register(self, func):
