@@ -5,6 +5,7 @@ Copyright Wenyi Tang 2023
 :Email: wenyitang@outlook.com
 
 """
+
 # pylint: disable=W0718
 
 import warnings

@@ -6,6 +6,7 @@ Copyright Wenyi Tang 2023-2024
 
 Split IR op to more than 1 onnx op
 """
+
 # pylint: disable=missing-function-docstring, missing-class-docstring
 
 import copy
@@ -361,33 +362,27 @@ class ReduceOp(SingleNodeMutator):
 
 
 @legalize.register
-class ReduceMean(ReduceOp):
-    ...
+class ReduceMean(ReduceOp): ...
 
 
 @legalize.register
-class ReduceMax(ReduceOp):
-    ...
+class ReduceMax(ReduceOp): ...
 
 
 @legalize.register
-class ReduceMin(ReduceOp):
-    ...
+class ReduceMin(ReduceOp): ...
 
 
 @legalize.register
-class ReduceProd(ReduceOp):
-    ...
+class ReduceProd(ReduceOp): ...
 
 
 @legalize.register
-class ReduceSum(ReduceOp):
-    ...
+class ReduceSum(ReduceOp): ...
 
 
 @legalize.register
-class ReduceSumSquare(ReduceOp):
-    ...
+class ReduceSumSquare(ReduceOp): ...
 
 
 @legalize.register
@@ -611,7 +606,7 @@ class DetectionOutput(SingleNodeMutator):
     Note:
 
         Due to implementation limitation, for now the DetectionOutput operation needs
-        manuall steps.
+        manual steps.
 
         During the conversion, DetectionOutput is removed and its input ports is set
         to be graph outputs. And a dedicated subgraph representing Decoder in the
@@ -689,7 +684,7 @@ c = merge_graphs(
         ("confidences", "confidences"),
     ],
 )
-c = make_model(c, opset_imports=a.opset_import)
+c = make_model(c, opset_imports=a.opset_import, ir_version=a.ir_version)
 onnx.checker.check_model(c)
 onnx.save_model(c, "{model_name}_composed.onnx")
 """
@@ -705,3 +700,70 @@ onnx.save_model(c, "{model_name}_composed.onnx")
             code_file.write(merge_code)
             # one time execution
             code_file.writelines(["import os\n", "os.remove(__file__)\n"])
+
+
+@legalize.register
+class PriorBox(SingleNodeMutator):
+    """Fold PriorBox node to a constant."""
+
+    def __init__(self):
+        super().__init__(pattern="PriorBox")
+
+    def trans(self, graph: nx.MultiDiGraph, node):
+        # pylint: disable=import-outside-toplevel
+        from openvino.runtime import Model, compile_model
+        from openvino.runtime.opset8 import constant, prior_box
+
+        attrs = graph.nodes[node]
+        layer_shape = fold_const_on_node(graph, node, "0")
+        image_shape = fold_const_on_node(graph, node, "1")
+        out_shape = list(map(int, attrs["outputs"]["2"]["dim"]))
+        out_dtype = attrs["outputs"]["2"].get("precision", "FP32")
+        layer_shape = constant(layer_shape, name="layer_shape")
+        image_shape = constant(image_shape, name="image_shape")
+
+        def _to_floats(text):
+            if not text:
+                return []
+            return list(map(float, text.split(",")))
+
+        pb_attrs = dict(
+            min_size=_to_floats(attrs.get("min_size")),
+            max_size=_to_floats(attrs.get("max_size")),
+            aspect_ratio=_to_floats(attrs.get("aspect_ratio")),
+            density=_to_floats(attrs.get("density")),
+            fixed_ratio=_to_floats(attrs.get("fixed_ratio")),
+            fixed_size=_to_floats(attrs.get("fixed_size")),
+            clip=text_to_boolean(attrs.get("clip", "false")),
+            flip=text_to_boolean(attrs.get("flip", "false")),
+            step=float(attrs["step"]),
+            offset=float(attrs.get("offset", "0")),
+            variance=_to_floats(attrs.get("variance")),
+            scale_all_sizes=text_to_boolean(attrs.get("scale_all_sizes", "false")),
+        )
+        if "min_max_aspect_ratios_order" in attrs:
+            pb_attrs["min_max_aspect_ratios_order"] = text_to_boolean(
+                attrs["min_max_aspect_ratios_order"]
+            )
+        prior_node = prior_box(layer_shape, image_shape, pb_attrs)
+        model = Model([layer_shape, image_shape, prior_node], [])
+        compiled_model = compile_model(model, "CPU")
+        data = compiled_model()[-1]
+        assert data.shape == tuple(out_shape)
+        assert data.dtype == PREC2DTYPE[out_dtype]
+
+        const_node = f"{node}_const"
+        graph.add_node(
+            const_node,
+            name=attrs["name"],
+            type="Const",
+            version="opset1",
+            shape=",".join(map(str, data.shape)),
+            outputs=copy.deepcopy(attrs["outputs"]),
+            data=data,
+        )
+
+        for out_edge in graph.out_edges(node):
+            edge_data = graph.get_edge_data(*out_edge, key=0)
+            graph.add_edge(const_node, out_edge[1], **edge_data)
+        graph.remove_node(node)

@@ -148,7 +148,7 @@ def build(g: nx.DiGraph, version: int = 13) -> ModelProto:  # noqa: C901
             raise
 
     model = ModelProto(
-        ir_version=onnx.IR_VERSION,
+        ir_version=onnx.IR_VERSION_2023_5_5,
         producer_name="openvino2onnx",
         graph=onnx_graph,
         opset_import=[OperatorSetIdProto(version=version)],

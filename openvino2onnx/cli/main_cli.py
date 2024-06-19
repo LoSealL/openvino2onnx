@@ -49,6 +49,7 @@ def main():
             model_url = download_from_omz_link(model_url, tmpdir)
             model = transform(model_url, None, args.fp32, args.opset_version)
     else:
+        model_url = Path(model_url).expanduser().resolve()
         model = transform(model_url, args.model_bin, args.fp32, args.opset_version)
     if args.output is None:
         out_file = Path(model_url).stem + ".onnx"
