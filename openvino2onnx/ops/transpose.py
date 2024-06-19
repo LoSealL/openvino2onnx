@@ -5,6 +5,7 @@ Copyright Wenyi Tang 2023
 :Email: wenyitang@outlook.com
 
 """
+
 from onnx import AttributeProto
 
 from . import Node, register

@@ -61,15 +61,11 @@ class MaxPool(Node):
         else:
             _dilations = [1, 1]
         _kernel = list(map(int, self.kernel.split(",")))
-        if _ceil_mode == 1:
-            _paddings = self.convert_ceil_to_floor(
-                _shape, _strides, _dilations, _kernel, _paddings
-            )
         # rounding_type="floor"
         ceil_mode = AttributeProto(
             name="ceil_mode",
             type=AttributeProto.INT,
-            i=0,
+            i=_ceil_mode,
         )
         # dilations="1, 1" in opset 19
         dilations = AttributeProto(  # noqa
