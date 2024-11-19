@@ -7,7 +7,7 @@ Copyright Wenyi Tang 2024
 
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import os
 from copy import deepcopy
