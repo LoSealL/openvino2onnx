@@ -30,7 +30,8 @@ def _lazy_load_xml_frontend():
 
 
 def openvino_xml_to_onnx_graph(
-    xml_path: str | os.PathLike, bin_path: Optional[str | os.PathLike] = None
+    xml_path: str | os.PathLike | onnx.ModelProto,
+    bin_path: Optional[str | os.PathLike] = None,
 ):
     """Isolate OpenVINO domain unless a IR xml is detected."""
     key = _make_key(IR_DOMAIN)

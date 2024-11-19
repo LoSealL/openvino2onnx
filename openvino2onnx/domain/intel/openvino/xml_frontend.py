@@ -25,7 +25,7 @@ _POST_PASSES = [
 
 
 def openvino_xml_to_onnx_graph(
-    model_path: str | Path,
+    model_path: str | Path | onnx.ModelProto,
     model_bin: Optional[str | Path] = None,
 ) -> onnx.ModelProto:
     """Convert OpenVINO IR .xml file to an equivalent ONNX graph.
@@ -38,8 +38,10 @@ def openvino_xml_to_onnx_graph(
     """
     if isinstance(model_path, onnx.ModelProto) and model_bin is None:
         ov_onnx = model_path  # for nested call but do not expose this interface
-    else:
+    elif not isinstance(model_path, onnx.ModelProto):
         ov_onnx = ir_to_onnx(model_path, model_bin)
+    else:
+        raise ValueError("model_bin is specified but model_path is given ModelProto")
     graph = OnnxGraph(ov_onnx)
     # sort OP_CONVERT here to make sure to put "Trivial" to the end
     passes = set(IR_PASSES).difference(OP_CONVERT)

@@ -52,7 +52,6 @@ def convert_graph(
     """
     for opset in detect_domain(model):
         if opset.domain == IR_DOMAIN.domain and opset.version <= IR_DOMAIN.version:
-            assert not isinstance(model, ModelProto)
             model = openvino_xml_to_onnx_graph(model)
     if isinstance(model, (str, os.PathLike)):
         model = onnx.load_model(model, format=onnx_format)
