@@ -1,57 +1,123 @@
-"""openvino2onnx is a tool to convert openvino IR format to ONNX.
+"""An Open Neural Network Exchange (ONNX) Optimization and Transformation Tool.
+
+Copyright Wenyi Tang 2024
+
+:Author: Wenyi Tang
+:Email: wenyitang@outlook.com
+
 """
 
+__version__ = "1.0.0"
+
 import os
-from typing import Optional
+from copy import deepcopy
+from typing import Literal, Optional, Sequence
 
 import onnx
+from onnx import ModelProto
+from onnx.helper import make_operatorsetid
 
-from .builder import build
-from .ir11 import ir_to_graph
-from .legalize import legalize
-
-__version__ = "0.2.0"
-
-__all__ = ["build", "ir_to_graph"]
+from .domain import IR_DOMAIN, detect_domain, openvino_xml_to_onnx_graph
+from .graph import OnnxGraph
+from .pass_manager import PassManager
+from .passes.convert.version_converter.downgrade import downgrade_op_version
+from .passes.convert.version_converter.upgrade import upgrade_op_version
 
 
-def transform(
-    model_url: str | os.PathLike,
-    model_bin: Optional[str | os.PathLike] = None,
-    force_fp32: bool = True,
-    opset_version: int = 17,
-) -> onnx.ModelProto:
-    """Transform an OpenVINO IR (.xml + .bin) back to a legal ONNX model.
+def convert_graph(
+    model: str | os.PathLike | ModelProto,
+    passes: Optional[Sequence[str]] = None,
+    exclude: Optional[Sequence[str]] = None,
+    onnx_format: Optional[Literal["protobuf", "textproto", "json", "onnxtxt"]] = None,
+    strict: bool = False,
+    configs: Optional[dict] = None,
+    print_passes: bool = True,
+    target_opset: Optional[int] = None,
+) -> OnnxGraph:
+    """Convert an ONNX model to OnnxGraph
 
     Args:
-        model_url (str | os.PathLike): model url, it is possible to be a local file
-            or a remote url or from OpenVINO model zoo with "omz://<model-name>".
-        model_bin (Optional[str | os.PathLike], optional): Weights file of the model.
-            If not provided, search the .bin file with same name as model .xml file.
-            Defaults to None.
-        force_fp32 (bool, optional): Force all fp16 data to be fp32. Defaults to True.
-        opset_version (int, optional): Export onnx opset version. Defaults to 17.
+        model (str | os.PathLike | ModelProto): path to the model or a loaded model.
+        passes (Sequence[str], optional): Names of selected passes. Defaults to None.
+        exclude (Sequence[str], optional): Names of excluded passes. Defaults to None.
+        onnx_format (str, optional): The serialization format of model file.
+        strict (bool, optional): Break if any pass goes wrong. Defaults to False.
+        configs (dict, optional): Specify configuration for passes
+        print_passes (bool, optional): Print the selected passes. Defaults to True.
+        target_opset (int, optional): Target opset version for ONNX domain. Defaults
+            to ``OPENVINO2ONNX_OPSET.version``.
 
     Returns:
-        onnx.ModelProto: _description_
+        OnnxGraph: converted graph
     """
-    assert 11 <= opset_version < 20, "opset version range is [11, 19]"
-    try:
-        graph = ir_to_graph(model_url, model_bin, force_fp32)
-    except (NotImplementedError, OSError, RuntimeError, ValueError):
-        print(f"[E] Failed to build {model_url} to graph.")
-        raise
-    try:
-        graph = legalize(graph)
-    except RuntimeError:
-        print("[E] Failed to legalize the graph.")
-        raise
-    try:
-        model = build(graph, version=opset_version)
-    except Exception:  # pylint: disable=W0718
-        print(
-            "[E] Failed to build graph to onnx model "
-            f"v{onnx.IR_VERSION} opset={opset_version}"
-        )
-        raise
-    return model
+    for opset in detect_domain(model):
+        if opset.domain == IR_DOMAIN.domain and opset.version <= IR_DOMAIN.version:
+            assert not isinstance(model, ModelProto)
+            model = openvino_xml_to_onnx_graph(model)
+    if isinstance(model, (str, os.PathLike)):
+        model = onnx.load_model(model, format=onnx_format)
+    else:
+        model = deepcopy(model)
+    graph = OnnxGraph(model)
+    if target_opset is None:
+        # align models to opset v19 because all passes is designed under opset19
+        graph = upgrade_op_version(graph, op_version=19)
+    pm = PassManager(passes, exclude=exclude, configs=configs)
+    if print_passes:
+        print(pm)
+    graph = pm.optimize(graph, strict=strict)
+    if target_opset is not None:
+        if target_opset < graph.opset_version:
+            graph = downgrade_op_version(graph, target_opset)
+        else:
+            graph = upgrade_op_version(graph, target_opset)
+    return graph
+
+
+def convert(
+    model: str | os.PathLike | ModelProto,
+    passes: Optional[Sequence[str]] = None,
+    exclude: Optional[Sequence[str]] = None,
+    onnx_format: Optional[Literal["protobuf", "textproto", "json", "onnxtxt"]] = None,
+    strict: bool = False,
+    configs: Optional[dict] = None,
+    print_passes: bool = True,
+    target_opset: Optional[int] = None,
+) -> ModelProto:
+    """Convert an ONNX model with default or given passes
+
+    Args:
+        model (str | os.PathLike | ModelProto): path to the model or a loaded model.
+        passes (Sequence[str], optional): Names of selected passes. Defaults to None.
+        exclude (Sequence[str], optional): Names of excluded passes. Defaults to None.
+        onnx_format (str, optional): The serialization format of model file.
+        strict (bool, optional): Break if any pass goes wrong. Defaults to False.
+        configs (dict, optional): Specify configuration for passes.
+        print_passes (bool, optional): Print the selected passes. Defaults to True.
+        target_opset (int, optional): Target opset version for ONNX domain. Defaults
+            to ``OPENVINO2ONNX_OPSET.version``.
+    """
+
+    graph = convert_graph(
+        model=model,
+        passes=passes,
+        exclude=exclude,
+        onnx_format=onnx_format,
+        strict=strict,
+        configs=configs,
+        print_passes=print_passes,
+        target_opset=target_opset,
+    )
+    return graph.model
+
+
+__all__ = ["convert", "PassManager"]
+
+# make NodeProto hashable using node name
+onnx.NodeProto.__hash__ = lambda self: hash(self.name)  # type: ignore
+
+OPENVINO2ONNX_IR_VERSION = onnx.IR_VERSION_2023_5_5
+"""Currently used IR version, since most runtime supports up to this version."""
+
+OPENVINO2ONNX_OPSET = make_operatorsetid("", 19)
+"""Currently used opset version, since most runtime supports up to this version."""

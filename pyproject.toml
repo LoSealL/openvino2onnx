@@ -10,23 +10,36 @@ authors = [{ name = "Wenyi Tang", email = "wenyitang@outlook.com" }]
 license = { file = "LICENSE" }
 classifiers = ["License :: OSI Approved :: MIT License"]
 dynamic = ["version", "description"]
-dependencies = ["onnx >= 1.8.1", "networkx", "numpy"]
+dependencies = ["onnx >= 1.8.1", "networkx", "numpy", "tabulate"]
 
 [project.urls]
 Home = "https://github.com/LoSealL/openvino2onnx"
+Docs = "https://loseall.github.io/openvino2onnx"
 
 [project.optional-dependencies]
 test = [
     "black",
     "flake8",
     "isort",
+    "pre-commit",
     "pytest",
-    "openvino >= 2023.1.0",
-    "openvino-dev >= 2023.1.0",
+    "pytest-cov",
+    "onnxoptimizer",
+    "onnxruntime",
+    "onnxsim < 0.4.36",
+    "openvino >= 2024.1.0",
+    "openvino-dev >= 2024.1.0",
 ]
 
 [project.scripts]
-openvino2onnx = "openvino2onnx.cli.main_cli:main"
+openvino2onnx = "openvino2onnx.__main__:main"
+
+[tool.pyright]
+include = ["openvino2onnx", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = ["-q", "-s"]
 
 [tool.flake8]
 ignore = ['E231', 'E241']
@@ -37,6 +50,9 @@ count = true
 
 [tool.isort]
 profile = "black"
+
+[tool.pylint."MAIN"]
+ignore-paths = []
 
 [tool.pylint."MESSAGES CONTROL"]
 disable = [

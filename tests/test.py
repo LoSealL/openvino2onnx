@@ -1,9 +1,8 @@
 """
-Copyright Wenyi Tang 2023
+Copyright Wenyi Tang 2024
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
-
 """
 
 import tempfile
@@ -14,8 +13,7 @@ import numpy as np
 import onnx
 from openvino import runtime
 
-from openvino2onnx import builder, ir11
-from openvino2onnx.legalize import legalize
+from openvino2onnx import convert
 
 
 def build_model(model_path: Path, strict: bool = False):
@@ -27,9 +25,7 @@ def build_model(model_path: Path, strict: bool = False):
             Defaults to False.
     """
     try:
-        g = ir11.ir_to_graph(model_path)
-        legalize(g)
-        model = builder.build(g)
+        model = convert(model_path, target_opset=19)
     except Exception:
         print(f"{model_path} convert error")
         raise

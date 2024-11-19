@@ -1,24 +1,8 @@
 """
-INTEL CONFIDENTIAL
+Copyright Wenyi Tang 2024
 
-Copyright (C) 2023 Intel Corporation. All Rights Reserved.
-
-The source code contained or described herein and all documents
-related to the source code ("Material") are owned by Intel Corporation
-or licensors. Title to the Material remains with Intel
-Corporation or its licensors. The Material contains trade
-secrets and proprietary and confidential information of Intel or its
-licensors. The Material is protected by worldwide copyright
-and trade secret laws and treaty provisions. No part of the Material may
-be used, copied, reproduced, modified, published, uploaded, posted,
-transmitted, distributed, or disclosed in any way without Intel's prior
-express written permission.
-
-No License under any patent, copyright, trade secret or other intellectual
-property right is granted to or conferred upon you by disclosure or
-delivery of the Materials, either expressly, by implication, inducement,
-estoppel or otherwise. Any license under such intellectual property rights
-must be express and approved by Intel in writing.
+:Author: Wenyi Tang
+:Email: wenyitang@outlook.com
 """
 
 import argparse
@@ -31,14 +15,14 @@ from contextlib import suppress
 from pathlib import Path
 
 import pytest
-from openvino.model_zoo.omz_converter import (
+from omz_tools.omz_converter import (
     ModelOptimizerProperties,
     _concurrency,
     _reporting,
     convert,
     num_jobs_arg,
 )
-from openvino.model_zoo.omz_downloader import (
+from omz_tools.omz_downloader import (
     Downloader,
     DownloaderArgumentParser,
     _common,
