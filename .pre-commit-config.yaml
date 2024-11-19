@@ -1,8 +1,7 @@
 fail_fast: false
-# exclude: (^build)
 repos:
 -   repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v5.0.0
     hooks:
     -   id: trailing-whitespace
     -   id: end-of-file-fixer
@@ -19,12 +18,19 @@ repos:
     -   id: isort
         args: ['--profile=black']
 -   repo: https://github.com/psf/black
-    rev: 24.4.2
+    rev: 24.10.0
     hooks:
     -   id: black
 -   repo: https://github.com/codespell-project/codespell
     rev: v2.3.0
     hooks:
     -   id: codespell
-        args: [-w, -I=.github/words_bag.txt]
-        exclude: (\.(txt|diff|patch)$|^xtensa/include)
+        args: [-w, -I=.github/WORDS_BAG.txt]
+        exclude: (\.(txt|diff|patch)$)
+-   repo: https://github.com/pycqa/flake8
+    rev: 7.1.1
+    hooks:
+    - id: flake8
+      additional_dependencies: [Flake8-pyproject]
+      args:
+      - '--ignore=W503'
