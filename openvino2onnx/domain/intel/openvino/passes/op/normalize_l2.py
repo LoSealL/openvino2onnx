@@ -22,8 +22,8 @@ class NormalizeL2(BaseNodeConversion):
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         axes = self.get_value(ori_node.input[1])
-        if axes is not None and len(axes) == 1:
-            axis = int(axes[0])
+        if axes is not None and axes.size == 1:
+            axis = int(axes.squeeze())
             return make_node(
                 "LpNormalization",
                 inputs=[ori_node.input[0]],
