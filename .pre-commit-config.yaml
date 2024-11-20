@@ -25,7 +25,7 @@ repos:
     rev: v2.3.0
     hooks:
     -   id: codespell
-        args: [-w, -I=.github/WORDS_BAG.txt]
+        args: [-w, -I=.github/words_bag.txt]
         exclude: (\.(txt|diff|patch)$)
 -   repo: https://github.com/pycqa/flake8
     rev: 7.1.1
