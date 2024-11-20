@@ -9,7 +9,7 @@ import numpy as np
 from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto
 
-from openvino2onnx.domain.intel.openvino.utils import text_to_boolean
+from openvino2onnx.domain.intel.openvino.utils import text_to_boolean, text_to_integers
 from openvino2onnx.graph import OnnxGraph
 from openvino2onnx.passes.utils import make_constant
 
@@ -24,13 +24,29 @@ class MVN(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        normalize_variance = text_to_boolean(
-            self.get_attribute(ori_node, "normalize_variance")
-        )
-        eps = float(self.get_attribute(ori_node, "eps"))
-        eps_mode = self.get_attribute(ori_node, "eps_mode").lower()
+        normalize_variance = self.get_attribute(ori_node, "normalize_variance")
+        assert isinstance(normalize_variance, str)
+        normalize_variance = text_to_boolean(normalize_variance)
+        eps = float(self.get_attribute(ori_node, "eps"))  # type: ignore
+        eps_mode = self.get_attribute(ori_node, "eps_mode") or "inside_sqrt"
+        assert isinstance(eps_mode, str)
+        eps_mode = eps_mode.lower()
+        assert eps_mode in ("inside_sqrt", "outside_sqrt")
 
-        axes = self.get_value(ori_node.input[1]).astype("int64")
+        if len(ori_node.input) == 1:
+            # backward compatibility for mvn-1
+            across_channels = self.get_attribute(ori_node, "across_channels")
+            assert isinstance(across_channels, str)
+            across_channels = text_to_boolean(across_channels)
+            reduction_axes = self.get_attribute(ori_node, "reduction_axes")
+            if across_channels:
+                input_rank = len(graph.tensor_shape(ori_node.input[0]))
+                axes = np.arange(input_rank, dtype="int64")
+            else:
+                assert isinstance(reduction_axes, str)
+                axes = np.array(text_to_integers(reduction_axes), "int64")
+        else:
+            axes = self.get_value(ori_node.input[1]).astype("int64")
         axes_norm = np.arange(axes.min(), axes.max() + 1).astype("int64")
         if len(axes) <= 1:
             rank = len(graph.tensor_shape(ori_node.input[0]))
