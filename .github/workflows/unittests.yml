@@ -20,4 +20,4 @@ jobs:
       - name: Install dependencies
         run: python -m pip install -e .[test]
       - name: Run pytest and coverage
-        run: python -m pytest --cov=openvino2onnx tests
+        run: python -m pytest --cov=openvino2onnx tests/tests.py
