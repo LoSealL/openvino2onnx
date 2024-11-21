@@ -151,6 +151,7 @@ def _graph_to_onnx(graph: nx.MultiDiGraph) -> onnx.ModelProto:
                 result = next(iter(node_inputs.values()))
                 shape = list(map(int, result["dim"]))
                 if "precision" not in result:
+                    logger.warning("precision not defined in Result node")
                     dtype = onnx.TensorProto.UNDEFINED
                 else:
                     dtype = PREC2DTYPE[result["precision"]]

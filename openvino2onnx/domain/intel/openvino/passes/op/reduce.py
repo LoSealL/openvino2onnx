@@ -24,6 +24,8 @@ class BaseReduce(BaseNodeConversion):
         attrs = dict(keepdims=1 if keepdims else 0)
         # canonicalize axes to int64
         axes = self.get_value(ori_node.input[1]).astype("int64")
+        if axes.ndim == 0:
+            axes = axes[None]  # axes must be a 1D tensor
         axes_node = make_constant(f"{ori_node.name}/axes", axes)
         ori_node.input[1] = axes_node.output[0]
         self += axes_node

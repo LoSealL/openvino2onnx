@@ -34,7 +34,9 @@ class Pad(BaseNodeConversion):
             if const_value is not None:
                 ori_node.input[2] = ori_node.input[3]
             ori_node.input.pop(3)
-        pads = make_constant(f"{ori_node.name}/pads", np.concatenate([begin, end]))
+        pads = make_constant(
+            f"{ori_node.name}/pads", np.concatenate([begin, end]).astype(np.int64)
+        )
         ori_node.input[1] = pads.output[0]
         ori_node.input.pop(2)
         self += pads

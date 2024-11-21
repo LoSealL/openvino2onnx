@@ -50,6 +50,10 @@ class Convolution(BaseNodeConversion):
             attrs["pads"] = itertools.chain(pads_begin, pads_end)
         else:
             attrs["auto_pad"] = auto_pad
+        kernel_shape = graph.tensor_shape(ori_node.input[1])
+        k0, k1 = kernel_shape[-2:]
+        if isinstance(k0, int) and isinstance(k1, int):
+            attrs["kernel_shape"] = [k0, k1]
         return make_node(
             "Conv",
             inputs=ori_node.input,
@@ -88,7 +92,11 @@ class GroupConvolution(BaseNodeConversion):
             weights = weights.reshape([-1, *weights.shape[2:]])
             cst_node = make_constant(f"{ori_node.name}/weights", weights)
             ori_node.input[1] = cst_node.output[0]
+            weight_shape = weights.shape
             self += cst_node
+        k0, k1 = weight_shape[-2:]
+        if isinstance(k0, int) and isinstance(k1, int):
+            attrs["kernel_shape"] = [k0, k1]
         return make_node(
             "Conv",
             inputs=ori_node.input,
