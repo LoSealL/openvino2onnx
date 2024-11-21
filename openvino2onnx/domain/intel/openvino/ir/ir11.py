@@ -78,7 +78,7 @@ def _load_const(graph, model_bin):
             if const_node["shape"]:
                 shape = list(map(int, const_node["shape"].split(",")))
             else:
-                shape = [-1]
+                shape = []
             if np.prod(shape) == 0:
                 data = np.empty([], dtype=dtype)
             else:
