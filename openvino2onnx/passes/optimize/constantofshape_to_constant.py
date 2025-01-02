@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -26,10 +26,11 @@ class ConstantOfShapeRewriter(Rewriter):
 
     def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto]):
         node = nodes[0]
-        shape = self.get_value(node.input[0])
+        shape = self.get_value_or_die(node.input[0])
         value = self.get_attribute(node, "value")
         if value is None:  # default value is 0.0
             value = np.array([0], dtype=np.float32)
+        assert isinstance(value, np.ndarray)
         assert len(value) == 1
         value = value[0]
         const_node = make_constant(

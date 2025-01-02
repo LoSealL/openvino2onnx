@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -10,7 +10,7 @@ from abc import ABCMeta, abstractmethod
 from copy import deepcopy
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable, Dict, Generator, List, Optional, Sequence
+from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Set
 from uuid import uuid4
 
 import networkx as nx
@@ -50,8 +50,8 @@ class Rewriter(metaclass=ABCMeta):
         self.pattern = pattern
         repeat_value = repeat.value if isinstance(repeat, RewriterRepeat) else repeat
         self.repeat = min(int(repeat_value), RewriterRepeat.INFINITE.value)
-        self.node_to_add = set()
-        self.node_to_remove = set()
+        self.node_to_add: Set[onnx.NodeProto] = set()
+        self.node_to_remove: Set[onnx.NodeProto] = set()
         self.post_hooks: Dict[int, Callable[[OnnxGraph], OnnxGraph]] = {}
 
     @abstractmethod
@@ -164,6 +164,15 @@ class Rewriter(metaclass=ABCMeta):
             name = i_or_s
             if name := graph._out_to_node.get(name):
                 return graph.nodes[name]["pb"]
+
+    def get_input_node_or_die(
+        self, node: onnx.NodeProto, i_or_s: int | str
+    ) -> onnx.NodeProto:
+        """Get the input node to the i-th input or raise an exception if not found."""
+        input_node = self.get_input_node(node, i_or_s)
+        if input_node is None:
+            raise ValueError(f"Failed to find input node for {node.name}({i_or_s})")
+        return input_node
 
     def get_input_nodes(self, node: onnx.NodeProto) -> List[onnx.NodeProto | None]:
         """Get all input nodes for the given node."""
@@ -285,6 +294,16 @@ class Rewriter(metaclass=ABCMeta):
             onnx.save_model(sub_model, temp_save)
             debug(f"evaluate subgraph failed on {node.name}: {temp_save}")
             return
+
+    def get_value_or_die(
+        self, node: onnx.NodeProto | str, output_name: Optional[str] = None
+    ) -> np.ndarray:
+        """Get value and raise exception if value is not evaluated."""
+        value = self.get_value(node, output_name)
+        if value is None:
+            node_name = node if isinstance(node, str) else node.name
+            raise ValueError(f"Failed to evaluate value for {node_name}({output_name})")
+        return value
 
     def register_post_hook(self, hook: Callable[[OnnxGraph], OnnxGraph]) -> int:
         """Register a post-rewrite hook function.

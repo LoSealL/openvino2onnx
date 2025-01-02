@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -70,13 +70,13 @@ class FuseQConvRewriter(Rewriter):
         if (bias_value := self.get_value(conv.input[2])) is not None:
             # bias is a constant float
             # quantize bias to int32 implicitly
-            scale = self.get_value(x_scale) * self.get_value(w_scale)
+            scale = self.get_value_or_die(x_scale) * self.get_value_or_die(w_scale)
             qbias_value = np.round(bias_value / scale).astype(np.int32)
             graph.initializer.append(
                 onnx.numpy_helper.from_array(qbias_value, conv.name + "/qbias")
             )
             return conv.name + "/qbias"
-        if (bias := self.get_input_node(conv, 2)).op_type == "DequantizeLinear":
+        if (bias := self.get_input_node_or_die(conv, 2)).op_type == "DequantizeLinear":
             # bias is already been quantized
             bias_value = self.get_value(bias.input[0])
             if bias_value is None:
@@ -124,7 +124,7 @@ class FuseQConvRewriter(Rewriter):
             inputs=inputs,
             outputs=[qoutput.output[0]],
             name=conv.name + "/qconv",
-            **self._conv_attrs(conv),
+            **self._conv_attrs(conv),  # type: ignore
         )
         self += qconv
         self -= [qinput, qweight, conv, qoutput]
@@ -204,7 +204,7 @@ class UnfuseQConvRewriter(Rewriter):
             inputs=[x + "_dq", w + "_dq"] + bias,
             outputs=[node.output[0] + "_q"],
             name=node.name + "/conv",
-            **self._conv_attrs(node),
+            **self._conv_attrs(node),  # type: ignore
         )
         qoutput = make_node(
             "QuantizeLinear",

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -62,5 +62,5 @@ class EliminateIdentityRewriter(Rewriter):
             self += constant_copy_node
 
         self -= identity_node
-        if fanout == 1:
+        if fanout == 1 and isinstance(constant_node, NodeProto):
             self -= constant_node

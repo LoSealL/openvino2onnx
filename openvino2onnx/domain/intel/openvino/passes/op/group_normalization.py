@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -30,8 +30,8 @@ class GroupNormalization(BaseNodeConversion):
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         dtype = graph.tensor_type(ori_node.input[0])
         dtype = tensor_dtype_to_np_dtype(dtype)
-        num_groups = int(self.get_attribute(ori_node, "num_groups"))
-        epsilon = float(self.get_attribute(ori_node, "epsilon"))
+        num_groups = int(self.get_attribute(ori_node, "num_groups"))  # type: ignore
+        epsilon = float(self.get_attribute(ori_node, "epsilon"))  # type: ignore
         ones = make_constant(f"{ori_node.name}/scale", np.ones([num_groups], dtype))
         zeros = make_constant(f"{ori_node.name}/bias", np.zeros([num_groups], dtype))
         gn = make_node(

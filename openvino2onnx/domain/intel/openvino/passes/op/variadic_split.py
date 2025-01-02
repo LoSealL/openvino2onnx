@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -22,7 +22,7 @@ class VariadicSplit(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        axis = self.get_value(ori_node.input[1])
+        axis = self.get_value_or_die(ori_node.input[1])
         ori_node.input.pop(1)
         dtype = graph.tensor_type(ori_node.input[-1])
         if dtype != onnx.TensorProto.INT64:

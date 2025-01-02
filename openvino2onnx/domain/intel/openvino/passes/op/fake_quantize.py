@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -30,17 +30,17 @@ class FakeQuantize(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        levels = int(self.get_attribute(ori_node, "levels") or 256)
+        levels = int(self.get_attribute(ori_node, "levels") or 256)  # type: ignore
         nbits = int(np.log2(levels))
         assert nbits in (8, 16, 32)
-        input_low = self.get_value(ori_node.input[1]).squeeze()
-        input_high = self.get_value(ori_node.input[2]).squeeze()
-        output_low = self.get_value(ori_node.input[3]).squeeze()
-        output_high = self.get_value(ori_node.input[4]).squeeze()
+        input_low = self.get_value_or_die(ori_node.input[1]).squeeze()
+        input_high = self.get_value_or_die(ori_node.input[2]).squeeze()
+        output_low = self.get_value_or_die(ori_node.input[3]).squeeze()
+        output_high = self.get_value_or_die(ori_node.input[4]).squeeze()
 
         try:
-            scale_prec = graph.tensor_type(ori_node.output[0])
-            scale_prec = TENSOR_TYPE_MAP[scale_prec].np_dtype
+            scale_type = graph.tensor_type(ori_node.output[0])
+            scale_prec = TENSOR_TYPE_MAP[scale_type].np_dtype
         except ValueError:
             scale_prec = np.float32
         zero_prec = np.iinfo(f"uint{nbits}").dtype

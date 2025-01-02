@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -46,14 +46,14 @@ class MVN(BaseNodeConversion):
                 assert isinstance(reduction_axes, str)
                 axes = np.array(text_to_integers(reduction_axes), "int64")
         else:
-            axes = self.get_value(ori_node.input[1]).astype("int64")
+            axes = self.get_value_or_die(ori_node.input[1]).astype("int64")
         axes_norm = np.arange(axes.min(), axes.max() + 1).astype("int64")
         if len(axes) <= 1:
             rank = len(graph.tensor_shape(ori_node.input[0]))
             axes_norm = np.arange(axes.min(), rank)
         if not np.all(axes == axes_norm) and len(axes) > 1:
             raise ValueError(f"Unsupported axes: {axes}")
-
+        # TODO: axes_norm is no needed, can be replaced by axes after 2024.3
         axes_node = make_constant(f"{ori_node.name}/axes", axes_norm)
         r_mean = make_node(
             "ReduceMean",
@@ -83,9 +83,9 @@ class MVN(BaseNodeConversion):
             # While in OpenVINO, `scale` must be broadcastable to the layer size. so
             # `scale` must be a shape of [8, 8] in this case.
             axis = int(axes_norm.flatten()[0])
-            scale_shape = graph.tensor_shape(ori_node.output[0])[axis:]
+            scale_s = graph.static_tensor_shape(ori_node.output[0])[axis:]
             scale = make_constant(
-                f"{ori_node.name}/scale", np.ones(scale_shape, np.float32)
+                f"{ori_node.name}/scale", np.ones(scale_s, np.float32)  # type: ignore
             )
             self += scale
             return make_node(

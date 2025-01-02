@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -7,7 +7,7 @@ Copyright Wenyi Tang 2024
 
 from os import PathLike
 from pathlib import Path
-from typing import Optional, Union
+from typing import List, Optional, Union
 from xml.etree import ElementTree
 
 import networkx as nx
@@ -75,6 +75,10 @@ def _load_const(graph, model_bin):
             size = int(const_node["size"])
             offset = int(const_node["offset"])
             dtype = ETYPE2DTYPE[const_node["element_type"]]
+            bfloat16 = dtype == "bfloat16"
+            if bfloat16:
+                # need to convert bf16 to float16
+                dtype = "float16"
             if const_node["shape"]:
                 shape = list(map(int, const_node["shape"].split(",")))
             else:
@@ -82,8 +86,19 @@ def _load_const(graph, model_bin):
             if np.prod(shape) == 0:
                 data = np.empty([], dtype=dtype)
             else:
-                raw = np.fromfile(model_bin, dtype="uint8", count=size, offset=offset)
-                data = np.frombuffer(raw.tobytes(), dtype=dtype).reshape(shape)
+                if model_bin is not None:
+                    raw = np.fromfile(
+                        model_bin, dtype="uint8", count=size, offset=offset
+                    )
+                    if bfloat16:
+                        # pylint: disable=import-outside-toplevel
+                        import torch  # noqa: F401
+
+                        data = torch.frombuffer(raw, dtype=torch.bfloat16)
+                        data = data.to(torch.float16).numpy()
+                    data = np.frombuffer(raw.tobytes(), dtype=dtype).reshape(shape)
+                else:
+                    data = np.zeros(shape, dtype=dtype)
             const_node["data"] = data
         except Exception:
             logger.error(f"exceptions on node:{node} {graph.nodes[node]['name']}")
@@ -106,7 +121,6 @@ def _graph_to_onnx(graph: nx.MultiDiGraph) -> onnx.ModelProto:
     onnx_nodes = []
     onnx_inputs = []
     onnx_outputs = []
-    initializers = []
     values_info = []
     for node_id in nx.topological_sort(graph):
         node_attrs = graph.nodes[node_id].copy()
@@ -114,49 +128,61 @@ def _graph_to_onnx(graph: nx.MultiDiGraph) -> onnx.ModelProto:
         node_type = node_attrs.pop("type")
         node_inputs = node_attrs.pop("inputs", {})
         node_outputs = node_attrs.pop("outputs", {})
-        outputs_name = []
-        outputs_shape = []
-        outputs_dtype = []
+        outputs_name: List[str] = []
+        outputs_shape: List[List[int]] = []
+        outputs_dtype: List[str] = []
         for _, i in sorted(node_outputs.items(), key=lambda x: int(x[0])):
             outputs_name.append(f"{node_name}_{i['name']}")
             outputs_shape.append(list(map(int, i["dim"])))
             outputs_dtype.append(PREC2DTYPE[i.get("precision", "FP32")])
-        input_names = {}
+        input_maps = {}
         for pred_node in graph.predecessors(node_id):
             pred_attrs = graph.nodes[pred_node]
             edges = graph.get_edge_data(pred_node, node_id)
             for edge in edges.values():
                 pred_output = pred_attrs["outputs"][edge["src"]]
                 # should sort by port id
-                input_names[int(edge["dst"])] = (
+                input_maps[int(edge["dst"])] = (
                     f"{pred_attrs['name']}_{pred_output['name']}"
                 )
-        input_names = [i[1] for i in sorted(input_names.items(), key=lambda x: x[0])]
-        for name, shape, dtype in zip(outputs_name, outputs_shape, outputs_dtype):
-            dtype = DTYPE2TENSORTYPE[np.dtype(dtype)]
+        input_names = [i[1] for i in sorted(input_maps.items(), key=lambda x: x[0])]
+        for name, shape, typestr in zip(outputs_name, outputs_shape, outputs_dtype):
+            if typestr == "bfloat16":
+                dtype = onnx.TensorProto.BFLOAT16
+            else:
+                dtype = DTYPE2TENSORTYPE[np.dtype(typestr)]
             values_info.append(make_tensor_value_info(name, dtype, shape))
         try:
             if node_type == "Parameter":
-                shape = []
+                par_shape: List[int | str] = []
                 for i, dim in enumerate(node_attrs.pop("shape").split(",")):
                     if dim == "?":
-                        shape.append(f"D{i}")
-                    else:
-                        shape.append(int(dim))
-                dtype = ETYPE2DTYPE[node_attrs.pop("element_type")]
-                dtype = DTYPE2TENSORTYPE[np.dtype(dtype)]
-                onnx_inputs.append(make_tensor_value_info(node_name, dtype, shape))
+                        par_shape.append(f"D{i}")
+                    elif dim != "":
+                        par_shape.append(int(dim))
+                typestr = ETYPE2DTYPE[node_attrs.pop("element_type")]
+                if typestr == "bfloat16":
+                    dtype = onnx.TensorProto.BFLOAT16
+                else:
+                    dtype = DTYPE2TENSORTYPE[np.dtype(typestr)]
+                onnx_inputs.append(make_tensor_value_info(node_name, dtype, par_shape))
                 input_names = [node_name]
             elif node_type == "Result":
                 result = next(iter(node_inputs.values()))
-                shape = list(map(int, result["dim"]))
+                res_shape: List[int | str] = list(map(int, result["dim"]))
+                for i, dim in enumerate(res_shape):
+                    if dim == -1:
+                        res_shape[i] = f"Y{i}"
                 if "precision" not in result:
-                    logger.warning("precision not defined in Result node")
+                    logger.warning(f"precision not defined in {node_name}(Result)")
                     dtype = onnx.TensorProto.UNDEFINED
                 else:
-                    dtype = PREC2DTYPE[result["precision"]]
-                    dtype = DTYPE2TENSORTYPE[np.dtype(dtype)]
-                onnx_outputs.append(make_tensor_value_info(node_name, dtype, shape))
+                    typestr = PREC2DTYPE[result["precision"]]
+                    if typestr == "bfloat16":
+                        dtype = onnx.TensorProto.BFLOAT16
+                    else:
+                        dtype = DTYPE2TENSORTYPE[np.dtype(typestr)]
+                onnx_outputs.append(make_tensor_value_info(node_name, dtype, res_shape))
                 outputs_name = [node_name]
             elif node_type == "Const":
                 node_attrs.pop("offset")
@@ -178,16 +204,15 @@ def _graph_to_onnx(graph: nx.MultiDiGraph) -> onnx.ModelProto:
             logger.error(f"Can't make node {node_name}({node_type})")
             raise
 
-    graph = make_graph(
+    onnx_graph = make_graph(
         onnx_nodes,
         name=graph.name,
         inputs=onnx_inputs,
         outputs=onnx_outputs,
-        initializer=initializers,
         value_info=values_info,
     )
     return make_model(
-        graph,
+        onnx_graph,
         producer_name="openvino2onnx",
         ir_version=OPENVINO2ONNX_IR_VERSION,
         opset_imports=[IR_DOMAIN, OPENVINO2ONNX_OPSET],
@@ -228,11 +253,13 @@ def ir_to_onnx(
         }
     if "name" in graph_info:
         graph_info.pop("name")
-    graph = nx.MultiDiGraph(name=name, **graph_info)
+    graph = nx.MultiDiGraph(name=name, **graph_info)  # type: ignore
     for layer in etree.iterfind("layers/layer"):
         _add_layer(graph, layer)
-    if model_bin is not None:
-        _load_const(graph, model_bin)
+    # load zeros if model_bin is not existed
+    _load_const(graph, model_bin)
+    if model_bin is None:
+        logger.warning("model_bin is not existed, use all zeros for weights")
     for edge in etree.iterfind("edges/edge"):
         _add_edge(graph, edge)
     _set_input_and_output(graph)

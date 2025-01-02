@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -10,7 +10,7 @@ import warnings
 from copy import deepcopy
 from itertools import chain
 from pathlib import Path
-from typing import IO, Dict, Iterable, List, Optional, Tuple
+from typing import IO, Dict, Iterable, List, Optional, Sequence, Tuple
 from uuid import uuid4
 
 import networkx as nx
@@ -20,6 +20,7 @@ from onnx.helper import (
     make_model,
     make_operatorsetid,
     make_tensor_type_proto,
+    make_tensor_value_info,
     make_value_info,
 )
 
@@ -34,17 +35,23 @@ class OnnxGraph(nx.DiGraph):
             assert isinstance(model, onnx.ModelProto)
             super().__init__(name=model.graph.name)
             self._model = model
-            self._node_to_out = {}
-            self._out_to_node = {}
+            self._node_to_out: Dict[str, Sequence[str]] = {}
+            self._out_to_node: Dict[str, str] = {}
             self._functions = {f.name: f for f in model.functions}
             try:
                 graph = onnx.shape_inference.infer_shapes(model).graph
             except onnx.shape_inference.InferenceError as ex:
                 warnings.warn(f"Inferring shape failed, value info is not set:\n {ex}")
                 graph = model.graph
+            # WA: infer_shapes could cause graph to be empty in some cases
+            if len(graph.node) == 0:
+                graph = model.graph
             self.inputs = {i.name: n for n, i in enumerate(graph.input)}
             self.outputs = {i.name: n for n, i in enumerate(graph.output)}
+            # read-only value info
             self._value_info = graph.value_info
+            # write-only value info
+            self._value_info_update = []
             for node in graph.node:
                 self._add_onnx_node_internal(node)
             self._build_edges()
@@ -127,7 +134,7 @@ class OnnxGraph(nx.DiGraph):
 
     def onnx_subgraph(self, nodes: Iterable[onnx.NodeProto | str]) -> "OnnxGraph":
         """Create a sub onnx graph from nodes"""
-        sub: nx.DiGraph = self.subgraph(
+        sub: nx.DiGraph = self.subgraph(  # type: ignore
             (n if isinstance(n, str) else n.name for n in nodes)
         )
         subonnx = make_graph([], f"subgraph of {self.name}", inputs=[], outputs=[])
@@ -229,6 +236,14 @@ class OnnxGraph(nx.DiGraph):
             raise ValueError(f"Can't find tensor shape with name '{name}'")
         return shape
 
+    def static_tensor_shape(self, name: str) -> List[int]:
+        """Get shape from a given tensor name, and ensure it is static."""
+        shape = self.tensor_shape(name)
+        for ind, i in enumerate(shape):
+            if isinstance(i, str) or i < 1:
+                raise ValueError(f"shape[{ind}] is dynamic: {i}")
+        return shape  # type: ignore
+
     def tensor_type(self, name: str) -> int:
         """Get tensor type from a given tensor name."""
         _, elem_type = self.tensor_info(name)
@@ -291,7 +306,7 @@ class OnnxGraph(nx.DiGraph):
         self.inputs[new_name] = self.inputs.pop(old_name)
         self.input[self.inputs[new_name]].name = new_name
         for n in nx.topological_sort(self):
-            if self.in_degree(n) > 0:
+            if self.in_degree(n) > 0:  # type: ignore
                 break
             input_node = self.nodes[n]["pb"]
             for ind, i in enumerate(input_node.input):
@@ -303,12 +318,37 @@ class OnnxGraph(nx.DiGraph):
         self.outputs[new_name] = self.outputs.pop(old_name)
         self.output[self.outputs[new_name]].name = new_name
         self._out_to_node[new_name] = self._out_to_node.pop(old_name)
-        output_node = self._out_to_node[new_name]
-        output_node = self.nodes[output_node]["pb"]
+        output_node_name = self._out_to_node[new_name]
+        output_node = self.nodes[output_node_name]["pb"]
         for ind, i in enumerate(output_node.output):
             if i == old_name:
                 output_node.output[ind] = new_name
         self._node_to_out[output_node.name] = output_node.output
+
+    def set_value_info(
+        self, name: str, shape: List[int | str], dtype: Optional[int] = None
+    ):
+        """Overwrite the value info of a tensor.
+
+        Args:
+            name (str): the name of the tensor.
+            shape (List[int | str]): the shape of the tensor.
+            dtype (int, optional): the data type of the tensor. Defaults to None.
+        """
+        for i, info in enumerate(self._value_info):
+            if info.name == name:
+                if dtype is None:
+                    dtype = info.type.tensor_type.elem_type
+                self._value_info.pop(i)
+                self._value_info_update.append(
+                    make_tensor_value_info(name, dtype, shape)
+                )
+                return
+        if dtype is None:
+            raise ValueError(
+                f"dtype is required because value is not existing for {name}"
+            )
+        self._value_info_update.append(make_tensor_value_info(name, dtype, shape))
 
     @property
     def input(self):
@@ -342,11 +382,6 @@ class OnnxGraph(nx.DiGraph):
             i.version for i in self._model.opset_import if i.domain in ("", "ai.onnx")
         )
 
-    @property
-    def functions(self) -> Dict[str, onnx.FunctionProto]:
-        """Return the functions inside the model."""
-        return self._functions
-
     @opset_version.setter
     def opset_version(self, version: int):
         """Set the opset version of the model."""
@@ -357,6 +392,11 @@ class OnnxGraph(nx.DiGraph):
         self._model.opset_import.append(make_operatorsetid("", version))
 
     @property
+    def functions(self) -> Dict[str, onnx.FunctionProto]:
+        """Return the functions inside the model."""
+        return self._functions
+
+    @property
     def model(self) -> onnx.ModelProto:
         """Make new model"""
         graph = deepcopy(self._model.graph)
@@ -364,6 +404,7 @@ class OnnxGraph(nx.DiGraph):
         graph.ClearField("value_info")
         for n in nx.topological_sort(self):
             graph.node.append(self.nodes[n]["pb"])
+        graph.value_info.extend(self._value_info_update)
         model = make_model(
             graph,
             doc_string=self._model.doc_string,
@@ -403,3 +444,4 @@ class OnnxGraph(nx.DiGraph):
         if check:
             onnx.checker.check_model(model, full_check=True)
         onnx.save_model(model, model_path, format=format)
+        return model_path

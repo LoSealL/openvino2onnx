@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -51,7 +51,7 @@ class Broadcast(BaseNodeConversion):
                     target_shape[len(target_shape) - k - 1] = i
         if input_rank != len(target_shape):
             # insert Unsqueeze to add missing dimensions
-            shape = graph.tensor_shape(ori_node.input[0])
+            shape = graph.static_tensor_shape(ori_node.input[0])
             shape = [1] * (len(target_shape) - input_rank) + shape
             shape_node = make_constant(
                 f"{ori_node.name}/shape", np.array(shape, dtype=np.int64)

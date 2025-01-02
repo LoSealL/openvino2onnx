@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -22,6 +22,7 @@ class GatherND(BaseNodeConversion):
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         batch_dims = self.get_attribute(ori_node, "batch_dims")
+        assert isinstance(batch_dims, (int, float, str))
         return make_node(
             "GatherND",
             inputs=ori_node.input,

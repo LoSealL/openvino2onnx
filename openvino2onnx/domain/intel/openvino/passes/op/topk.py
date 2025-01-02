@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -55,6 +55,7 @@ class TopK(BaseNodeConversion):
             ori_node.output[1] = cast_out.input[0]
             self += cast_out
         axis = self.get_attribute(ori_node, "axis")
+        assert isinstance(axis, (str, float, int))
         mode = self.get_attribute(ori_node, "mode")
         sort = self.get_attribute(ori_node, "sort")
         if sort == "index":

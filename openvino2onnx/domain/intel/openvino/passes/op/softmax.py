@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -21,7 +21,9 @@ class SoftMax(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        axis = int(self.get_attribute(ori_node, "axis") or -1)
+        axis = self.get_attribute(ori_node, "axis") or -1
+        assert isinstance(axis, (str, int))
+        axis = int(axis)
         return make_node(
             "Softmax",
             inputs=ori_node.input,

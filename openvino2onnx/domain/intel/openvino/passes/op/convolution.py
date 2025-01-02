@@ -1,11 +1,12 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 """
 
 import itertools
+from typing import Any, Dict
 
 from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto
@@ -40,14 +41,23 @@ class Convolution(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        dilations = text_to_integers(self.get_attribute(ori_node, "dilations"))
-        strides = text_to_integers(self.get_attribute(ori_node, "strides"))
-        pads_begin = text_to_integers(self.get_attribute(ori_node, "pads_begin"))
-        pads_end = text_to_integers(self.get_attribute(ori_node, "pads_end"))
+        dilations = self.get_attribute(ori_node, "dilations")
+        assert isinstance(dilations, str) or dilations is None
+        dilations = text_to_integers(dilations)
+        strides = self.get_attribute(ori_node, "strides")
+        assert isinstance(strides, str) or strides is None
+        strides = text_to_integers(strides)
+        pads_begin = self.get_attribute(ori_node, "pads_begin")
+        assert isinstance(pads_begin, str) or pads_begin is None
+        pads_begin = text_to_integers(pads_begin)
+        pads_end = self.get_attribute(ori_node, "pads_end")
+        assert isinstance(pads_end, str) or pads_end is None
+        pads_end = text_to_integers(pads_end)
         auto_pad = _trans_auto_pad(self.get_attribute(ori_node, "auto_pad"))
-        attrs = dict(dilations=dilations, strides=strides)
+        attrs: Dict[str, Any] = dict(dilations=dilations, strides=strides)
         if auto_pad == "NOTSET":
-            attrs["pads"] = itertools.chain(pads_begin, pads_end)
+            assert pads_begin is not None and pads_end is not None
+            attrs["pads"] = list(itertools.chain(pads_begin, pads_end))
         else:
             attrs["auto_pad"] = auto_pad
         kernel_shape = graph.tensor_shape(ori_node.input[1])
@@ -71,24 +81,36 @@ class GroupConvolution(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        dilations = text_to_integers(self.get_attribute(ori_node, "dilations"))
-        strides = text_to_integers(self.get_attribute(ori_node, "strides"))
-        pads_begin = text_to_integers(self.get_attribute(ori_node, "pads_begin"))
-        pads_end = text_to_integers(self.get_attribute(ori_node, "pads_end"))
+        dilations = self.get_attribute(ori_node, "dilations")
+        assert isinstance(dilations, str) or dilations is None
+        dilations = text_to_integers(dilations)
+        strides = self.get_attribute(ori_node, "strides")
+        assert isinstance(strides, str) or strides is None
+        strides = text_to_integers(strides)
+        pads_begin = self.get_attribute(ori_node, "pads_begin")
+        assert isinstance(pads_begin, str) or pads_begin is None
+        pads_begin = text_to_integers(pads_begin)
+        pads_end = self.get_attribute(ori_node, "pads_end")
+        assert isinstance(pads_end, str) or pads_end is None
+        pads_end = text_to_integers(pads_end)
         auto_pad = _trans_auto_pad(self.get_attribute(ori_node, "auto_pad"))
-        attrs = dict(dilations=dilations, strides=strides)
+        attrs: Dict[str, Any] = dict(dilations=dilations, strides=strides)
         if auto_pad == "NOTSET":
-            attrs["pads"] = itertools.chain(pads_begin, pads_end)
+            assert pads_begin is not None and pads_end is not None
+            attrs["pads"] = list(itertools.chain(pads_begin, pads_end))
         else:
             attrs["auto_pad"] = auto_pad
         # calculate groups
         weight_shape = graph.tensor_shape(ori_node.input[1])
         group = weight_shape[0]
+        if isinstance(group, str) or group < 1:
+            raise ValueError(f"Weight shape[0] is dynamic: {group}")
         attrs["group"] = group
         if group > 1:
             # should reshape weights from [G, C_out, C_in, K0, K1, ...]
             # to [G * C_out, C_in, K0, K1, ...].
             weights = self.get_value(ori_node.input[1])
+            assert weights is not None
             weights = weights.reshape([-1, *weights.shape[2:]])
             cst_node = make_constant(f"{ori_node.name}/weights", weights)
             ori_node.input[1] = cst_node.output[0]

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -32,18 +32,18 @@ class CenterCropPad(Rewriter):
         shape = self.get_value(node.input[1])
         if shape is None:
             raise RuntimeError(f"shape of {node.name} is not constant")
-        ori_shape = graph.tensor_shape(node.input[0])
+        ori_shape = graph.static_tensor_shape(node.input[0])
         if axes is None:
             axes = list(range(len(shape)))
-        axes = sorted(axes)
+        axes = sorted(axes)  # type: ignore
 
         if self._need_pad(shape, ori_shape, axes):
             shape_iter = iter(shape)
             shape_expand = list(ori_shape)
             for i in axes:
                 shape_expand[i] = next(shape_iter)
-            paddings = [max(0, i - j) for i, j in zip(shape_expand, ori_shape)]
-            paddings = np.array([[i // 2, i - i // 2] for i in paddings], np.int64)
+            pad_list = [max(0, i - j) for i, j in zip(shape_expand, ori_shape)]
+            paddings = np.array([[i // 2, i - i // 2] for i in pad_list], np.int64)
             paddings = paddings.transpose().flatten()
             pad_cst = make_constant(f"{node.name}/Pad/pads", paddings)
             pad = make_node(

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -30,17 +30,33 @@ class AvgPool(BaseNodeConversion):
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         ceil_mode = self._trans_ceil_mode(self.get_attribute(ori_node, "rounding_type"))
-        pads_begin = text_to_integers(self.get_attribute(ori_node, "pads_begin"))
-        pads_end = text_to_integers(self.get_attribute(ori_node, "pads_end"))
-        dilations = text_to_integers(self.get_attribute(ori_node, "dilations"))
-        strides = text_to_integers(self.get_attribute(ori_node, "strides"))
-        kernel = text_to_integers(self.get_attribute(ori_node, "kernel"))
-        pads = list(itertools.chain(pads_begin, pads_end))
+        pads_begin = self.get_attribute(ori_node, "pads_begin")
+        assert isinstance(pads_begin, str) or pads_begin is None
+        pads_begin = text_to_integers(pads_begin)
+        pads_end = self.get_attribute(ori_node, "pads_end")
+        assert isinstance(pads_end, str) or pads_end is None
+        pads_end = text_to_integers(pads_end)
+        dilations = self.get_attribute(ori_node, "dilations")
+        assert isinstance(dilations, str) or dilations is None
+        dilations = text_to_integers(dilations)
+        strides = self.get_attribute(ori_node, "strides")
+        assert isinstance(strides, str) or strides is None
+        strides = text_to_integers(strides)
+        kernel = self.get_attribute(ori_node, "kernel")
+        assert isinstance(kernel, str) or kernel is None
+        kernel = text_to_integers(kernel)
         if auto_pad := self.get_attribute(ori_node, "auto_pad"):
+            assert isinstance(auto_pad, str)
             if auto_pad == "explicit":
                 auto_pad = "NOTSET"
+                assert pads_begin is not None and pads_end is not None
+                pads = list(itertools.chain(pads_begin, pads_end))
             else:
                 pads = None
+        else:
+            auto_pad = "NOTSET"
+            assert pads_begin is not None and pads_end is not None
+            pads = list(itertools.chain(pads_begin, pads_end))
         return make_node(
             "AveragePool",
             inputs=ori_node.input,

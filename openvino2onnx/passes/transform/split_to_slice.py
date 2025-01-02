@@ -37,6 +37,7 @@ class SplitToSliceRewriter(Rewriter):
                 num_outputs = graph.tensor_shape(node.input[0])[axis]
             assert isinstance(num_outputs, int)
             shape = graph.tensor_shape(node.input[0])[axis]
+            assert isinstance(shape, int)
             if shape % num_outputs == 0:
                 split = [shape // num_outputs] * num_outputs
             else:

@@ -1,10 +1,11 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 """
 
+import numpy as np
 from onnx.helper import make_node
 from onnx.numpy_helper import from_array
 from onnx.onnx_pb import NodeProto
@@ -25,7 +26,9 @@ class Const(BaseNodeConversion):
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         value = self.get_attribute(ori_node, "value")
         shape = self.get_attribute(ori_node, "shape")
+        assert isinstance(value, np.ndarray)
         if shape is not None:
+            assert isinstance(shape, str)
             shape = [i for i in text_to_integers(shape) if i != 0]
             value = value.reshape(shape)
         return make_node(

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -31,8 +31,9 @@ class ScatterElementsUpdate(BaseNodeConversion):
     }
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        axis = self.get_value(ori_node.input[3])
+        axis = self.get_value_or_die(ori_node.input[3])
         reduction = self.get_attribute(ori_node, "reduction")
+        assert isinstance(reduction, str)
         if reduction == "mean":
             raise ValueError("Unsupported reduction: mean")
         reduction = self._reduction_map[reduction]
@@ -58,9 +59,9 @@ class ScatterUpdate(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        indices_shape = graph.tensor_shape(ori_node.input[1])
-        updates_shape = graph.tensor_shape(ori_node.input[2])
-        axis = self.get_value(ori_node.input[3]).squeeze()
+        indices_shape = graph.static_tensor_shape(ori_node.input[1])
+        updates_shape = graph.static_tensor_shape(ori_node.input[2])
+        axis = self.get_value_or_die(ori_node.input[3]).squeeze()
 
         if axis < 0:
             axis += len(graph.tensor_shape(ori_node.input[0]))
@@ -85,7 +86,7 @@ class ScatterUpdate(BaseNodeConversion):
         new_indices_shape = [
             1 for _ in range(len(graph.tensor_shape(ori_node.input[0])))
         ]
-        new_indices_shape[axis] = np.prod(indices_shape)
+        new_indices_shape[axis] = int(np.prod(indices_shape))
         indices_shape_cst = make_constant(
             f"{ori_node.name}/indices_shape", np.array(new_indices_shape, np.int64)
         )

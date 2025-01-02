@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright Wenyi Tang 2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -13,20 +13,17 @@ from openvino2onnx.graph import OnnxGraph
 from . import OP_CONVERT, BaseNodeConversion
 
 
-@OP_CONVERT.register(name="concat")
-class Concat(BaseNodeConversion):
-    """https://docs.openvino.ai/2024/documentation/openvino-ir-format/operation-sets/operation-specs/movement/concat-1.html
+@OP_CONVERT.register(name="less_equal")
+class LessEqual(BaseNodeConversion):
+    """https://docs.openvino.ai/2024/documentation/openvino-ir-format/operation-sets/operation-specs/comparison/less-equal-1.html
 
-    https://onnx.ai/onnx/operators/onnx__Concat.html
+    https://onnx.ai/onnx/operators/onnx__LessOrEqual.html
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        axis = self.get_attribute(ori_node, "axis")
-        assert isinstance(axis, (int, float, str))
         return make_node(
-            "Concat",
+            "LessOrEqual",
             inputs=ori_node.input,
             outputs=ori_node.output,
             name=ori_node.name,
-            axis=int(axis),
         )

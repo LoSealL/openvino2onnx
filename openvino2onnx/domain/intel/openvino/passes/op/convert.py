@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -21,7 +21,7 @@ class Convert(BaseNodeConversion):
     https://onnx.ai/onnx/operators/onnx__Cast.html
     """
 
-    def _to_dtype(self, destination_type: str):
+    def _to_dtype(self, destination_type):
         match destination_type:
             case "f64":
                 return onnx.TensorProto.DOUBLE
@@ -49,6 +49,7 @@ class Convert(BaseNodeConversion):
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         destination_type = self.get_attribute(ori_node, "destination_type")
+        assert isinstance(destination_type, str) or destination_type is None
         return make_node(
             "Cast",
             inputs=ori_node.input,

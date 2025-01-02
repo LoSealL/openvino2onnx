@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -20,10 +20,11 @@ class BaseReduce(BaseNodeConversion):
     """Generic implementation of reduce operations."""
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        keepdims = self.get_attribute(ori_node, "keep_dims").lower() == "true"
-        attrs = dict(keepdims=1 if keepdims else 0)
+        keepdims = self.get_attribute(ori_node, "keep_dims")
+        assert isinstance(keepdims, str)
+        keepdims = keepdims.lower() == "true"
         # canonicalize axes to int64
-        axes = self.get_value(ori_node.input[1]).astype("int64")
+        axes = self.get_value_or_die(ori_node.input[1]).astype("int64")
         if axes.ndim == 0:
             axes = axes[None]  # axes must be a 1D tensor
         axes_node = make_constant(f"{ori_node.name}/axes", axes)
@@ -34,7 +35,7 @@ class BaseReduce(BaseNodeConversion):
             inputs=ori_node.input,
             outputs=ori_node.output,
             name=ori_node.name,
-            **attrs,
+            keepdims=1 if keepdims else 0,
         )
 
 

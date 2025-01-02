@@ -1,12 +1,12 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 """
 
 from contextlib import suppress
-from typing import List
+from typing import List, Optional
 
 from openvino2onnx import OnnxGraph
 from openvino2onnx.passes import L3
@@ -15,7 +15,7 @@ with suppress(ImportError):
     import onnxoptimizer
 
     @L3.register()
-    def onnx_optimizer(graph: OnnxGraph, passes: List[str] = None):
+    def onnx_optimizer(graph: OnnxGraph, passes: Optional[List[str]] = None):
         """Fuse op and remove isolated nodes.
 
         Args:

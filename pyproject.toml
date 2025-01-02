@@ -35,7 +35,9 @@ test = [
 openvino2onnx = "openvino2onnx.__main__:main"
 
 [tool.pyright]
-include = ["openvino2onnx", "tests"]
+include = ["openvino2onnx"]
+exclude = ["openvino2onnx/domain/pytorch", "tests", "tests_omz_fuzzy"]
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
