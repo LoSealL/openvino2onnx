@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -11,6 +11,7 @@ ETYPE2DTYPE = {
     "f64": "float64",
     "f32": "float32",
     "f16": "float16",
+    "bf16": "bfloat16",
     "i64": "int64",
     "i32": "int32",
     "i16": "int16",
@@ -27,6 +28,7 @@ PREC2DTYPE = {
     "FP64": "float64",
     "FP32": "float32",
     "FP16": "float16",
+    "BF16": "bfloat16",
     "I64": "int64",
     "I32": "int32",
     "I16": "int16",

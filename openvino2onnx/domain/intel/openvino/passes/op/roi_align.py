@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -27,9 +27,13 @@ class ROIAlign(BaseNodeConversion):
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         pooled_h = self.get_attribute(ori_node, "pooled_h")
+        assert isinstance(pooled_h, (int, float, str))
         pooled_w = self.get_attribute(ori_node, "pooled_w")
+        assert isinstance(pooled_w, (int, float, str))
         sampling_ratio = self.get_attribute(ori_node, "sampling_ratio")
+        assert isinstance(sampling_ratio, (int, float, str))
         spatial_scale = self.get_attribute(ori_node, "spatial_scale")
+        assert isinstance(spatial_scale, (int, float, str))
         mode = self.get_attribute(ori_node, "mode")
         aligned_mode = self.get_attribute(ori_node, "aligned_mode") or "asymmetric"
         if aligned_mode not in self._aligned_mode_map:

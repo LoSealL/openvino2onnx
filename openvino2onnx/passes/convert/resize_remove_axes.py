@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -33,13 +33,13 @@ class ResizeRemoveAxesRewriter(Rewriter):
 
     def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto], *args, **kwargs):
         node = nodes[0]
-        if axes := self.get_attribute(node, "axes"):
+        if axes := self.get_attribute(node, "axes"):  # type: ignore
             input_shape = graph.tensor_shape(node.input[0])
             input_rank = len(input_shape)
-            axes = [i if i >= 0 else i + input_rank for i in axes]
+            axes: List[int] = [i if i >= 0 else i + input_rank for i in axes]
             missing_axes = set(range(input_rank)) - set(axes)
-            scales = self.get_input_node(node, 2)
-            scales_value = self.get_value(scales)
+            scales = self.get_input_node_or_die(node, 2)
+            scales_value = self.get_value_or_die(scales)
             dtype = scales_value.dtype
             scales_value = {axis: scales_value[i] for i, axis in enumerate(axes)}
             scales_value.update({axis: 1.0 for axis in missing_axes})

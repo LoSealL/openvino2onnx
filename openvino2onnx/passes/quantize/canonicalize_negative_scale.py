@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -56,6 +56,7 @@ class CanonicalizeNegativeScaleRewriter(Rewriter):
         if axis is None:
             axis = 0
         else:
+            assert isinstance(axis, (int, float, str))
             axis = int(axis)
         neg_mask = scale < 0
         logger.debug(f"======={node.name}=======")
@@ -66,8 +67,8 @@ class CanonicalizeNegativeScaleRewriter(Rewriter):
         scale = scale.copy()
         scale[neg_mask] = -scale[neg_mask]
 
-        dtype = graph.tensor_type(node.input[0])
-        dtype = tensor_dtype_to_np_dtype(dtype)
+        etype = graph.tensor_type(node.input[0])
+        dtype = tensor_dtype_to_np_dtype(etype)
         dinfo = np.iinfo(dtype)
         reweight = np.round(dq_weight / scale.reshape(shape)).clip(dinfo.min, dinfo.max)
         reweight = reweight.astype(dtype)

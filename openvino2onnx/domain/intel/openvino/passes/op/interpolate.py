@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -25,7 +25,7 @@ class Interpolate(BaseNodeConversion):
     https://onnx.ai/onnx/operators/onnx__Resize.html
     """
 
-    def _to_mode(self, mode: str):
+    def _to_mode(self, mode):
         if mode == "linear_onnx":
             return "linear"
         return mode
@@ -49,6 +49,8 @@ class Interpolate(BaseNodeConversion):
                 axes = np.arange(len(image_shape))
         else:
             rank = graph.tensor_shape(ori_node.input[1])[0]
+            if isinstance(rank, str) or rank < 1:
+                raise ValueError(f"Input shape[0] is dynamic: {rank}")
             # NOTE: 1. negative axis causes a bug in onnxruntime
             # NOTE: 2. axis less than input rank causes a bug in openvino
             # Solution to #1: convert to positive axis (here line:64)
@@ -81,9 +83,9 @@ class Interpolate(BaseNodeConversion):
         nearest_mode = self.get_attribute(ori_node, "nearest_mode")
         cubic_coeff_a = self.get_attribute(ori_node, "cubic_coeff")
         pads_begin = self.get_attribute(ori_node, "pads_begin")
-        pads_begin = list(map(int, pads_begin.split(",")))
+        pads_begin = list(map(int, pads_begin.split(",")))  # type: ignore
         pads_end = self.get_attribute(ori_node, "pads_end")
-        pads_end = list(map(int, pads_end.split(",")))
+        pads_end = list(map(int, pads_end.split(",")))  # type: ignore
 
         if any(pads_begin) or any(pads_end):
             raise ValueError("Interpolate does not support converting with padding")
@@ -105,7 +107,7 @@ class Interpolate(BaseNodeConversion):
         have to guess the scales_or_size based on its data type.
         """
         # get scales_or_size
-        scales_or_size = self.get_value(ori_node.input[1])
+        scales_or_size = self.get_value_or_die(ori_node.input[1])
         # size to scales
         input_dims = np.array(graph.tensor_shape(ori_node.input[0]))
         scales = scales_or_size
@@ -130,7 +132,7 @@ class Interpolate(BaseNodeConversion):
         self += scale_node
         # axes
         if len(ori_node.input) > 3:
-            axes = self.get_value(ori_node.input[3])
+            axes = self.get_value_or_die(ori_node.input[3])
             assert tuple(axes) == (2, 3)
             ori_node.input.pop(3)
 
@@ -139,9 +141,9 @@ class Interpolate(BaseNodeConversion):
         nearest_mode = self.get_attribute(ori_node, "nearest_mode")
         cubic_coeff_a = self.get_attribute(ori_node, "cubic_coeff")
         pads_begin = self.get_attribute(ori_node, "pads_begin")
-        pads_begin = list(map(int, pads_begin.split(",")))
+        pads_begin = list(map(int, pads_begin.split(",")))  # type: ignore
         pads_end = self.get_attribute(ori_node, "pads_end")
-        pads_end = list(map(int, pads_end.split(",")))
+        pads_end = list(map(int, pads_end.split(",")))  # type: ignore
 
         if any(pads_begin) or any(pads_end):
             raise ValueError("Interpolate does not support converting with padding")

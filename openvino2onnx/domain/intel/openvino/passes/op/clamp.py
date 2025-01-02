@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -24,8 +24,8 @@ class Clamp(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        min_value = float(self.get_attribute(ori_node, "min"))
-        max_value = float(self.get_attribute(ori_node, "max"))
+        min_value = float(self.get_attribute(ori_node, "min"))  # type: ignore
+        max_value = float(self.get_attribute(ori_node, "max"))  # type: ignore
         try:
             prec = graph.tensor_type(ori_node.output[0])
         except ValueError:

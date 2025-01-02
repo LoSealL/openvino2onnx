@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -19,7 +19,7 @@ def _expand_deps(deps):
     leaves: list = deps.copy()
     while leaves:
         leaf = leaves.pop(0)
-        children = PASSES.get(leaf).__deps__
+        children = PASSES[leaf].__deps__  # type: ignore
         leaves.extend(children)
         root.add_edges_from([(leaf, child) for child in children])
         try:
@@ -53,8 +53,8 @@ def downgrade_op_version(graph: OnnxGraph, op_version: int = 17):
     for node_type in node_types:
         if converter := OP_CONVERTER[op_version].get(node_type):
             try:
-                for deps in _expand_deps(converter.__deps__):
-                    graph = PASSES.get(deps)(graph)
+                for deps in _expand_deps(converter.__deps__):  # type: ignore
+                    graph = PASSES[deps](graph)
                 graph = converter(graph)
             except Exception:  # pylint: disable=broad-except
                 logger.error(f"Failed to downgrade {node_type} to {op_version}")

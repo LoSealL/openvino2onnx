@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -33,14 +33,14 @@ class ShapeOfToConstantRewriter(Rewriter):
         input_shape, _ = graph.tensor_info(node.input[0])
         if input_shape is None:
             return
-        elif any(i <= 0 for i in input_shape):
+        elif any(isinstance(i, str) or i <= 0 for i in input_shape):
             return  # dynamic shape
 
         self -= node
         if self.get_attribute(node, "output_type") == "i32":
-            dtype = np.int32
+            dtype = "int32"
         else:
-            dtype = np.int64
+            dtype = "int64"
         cst_node = make_constant(node.name, np.array(input_shape, dtype))
         cst_node.output[0] = node.output[0]
         self += cst_node

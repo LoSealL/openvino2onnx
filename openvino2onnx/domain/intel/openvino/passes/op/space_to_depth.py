@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -22,6 +22,7 @@ class SpaceToDepth(BaseNodeConversion):
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         blocksize = self.get_attribute(ori_node, "block_size")
+        assert isinstance(blocksize, (int, float, str))
         mode = self.get_attribute(ori_node, "mode")
         if mode is not None and mode != "blocks_first":
             raise NotImplementedError(f"mode {mode} is not supported!")

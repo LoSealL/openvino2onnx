@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -7,7 +7,7 @@ Copyright Wenyi Tang 2024
 
 from importlib import import_module
 from pathlib import Path
-from typing import Optional, Set
+from typing import Optional, Set, Tuple
 
 from .logger import warning
 
@@ -26,7 +26,7 @@ def auto_load(cwd: str | Path, filters: Optional[Set[str]] = None, top: Path = T
     package = models_dir.relative_to(top).as_posix().replace("/", ".")
 
     def _filter(p: Path) -> bool:
-        pattern = ("__",)
+        pattern: Tuple[str, ...] = ("__",)
         if filters:
             pattern += tuple(filters)
         return all(i not in p.stem for i in pattern)

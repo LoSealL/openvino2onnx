@@ -1,11 +1,12 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 """
 
 import traceback
+from abc import ABCMeta, abstractmethod
 from functools import partial
 from itertools import chain
 from typing import Any, Dict, List, Mapping, Optional, Sequence
@@ -16,6 +17,44 @@ from tabulate import tabulate
 from .graph import OnnxGraph
 from .passes import L1, L2, L3, PASSES
 from .passes.logger import debug, error, warning
+
+
+class RewriterInterface(metaclass=ABCMeta):
+    """Interface helper for rewriting ONNX graphs."""
+
+    @abstractmethod
+    def __call__(self, graph: OnnxGraph, *args, **kwargs) -> OnnxGraph:
+        """Rewriter is a callable that takes :class:`OnnxGraph` and returns a
+        modified graph.
+        """
+
+    @property
+    @abstractmethod
+    def __deps__(self) -> List[str]:
+        """This property is a list of pass names that this pass depends on."""
+
+    @__deps__.setter
+    def __deps__(self, value: Sequence[str]):
+        """This property can be changed."""
+
+    @property
+    @abstractmethod
+    def __patches__(self) -> List[str]:
+        """This property is a list of pass names that will be applied after
+        this pass."""
+
+    @__patches__.setter
+    def __patches__(self, value: Sequence[str]):
+        """This property can be changed."""
+
+    @property
+    @abstractmethod
+    def __name__(self) -> str:
+        """This property is the name of the pass."""
+
+    @__name__.setter
+    def __name__(self, value: str):
+        """This property can be changed."""
 
 
 class PassManager:
@@ -42,7 +81,9 @@ class PassManager:
             passes = [i for i in include]
         if exclude:
             passes = list(filter(lambda i: i not in exclude, passes))
-        self.activated = [PASSES.get(i) for i in passes if i in PASSES]
+        self.activated: List[RewriterInterface] = [  # type: ignore
+            PASSES[i] for i in passes if i in PASSES  # type: ignore
+        ]
         if configs:
             self._assign_config_to_pass(configs)
 
@@ -50,8 +91,8 @@ class PassManager:
         for key, config in configs.items():
             index = -1
             if ":" in key:
-                key, index = key.split(":", 2)
-                index = int(index)
+                key, index_str = key.split(":", 2)
+                index = int(index_str)
             if not isinstance(config, Mapping):
                 warning(f"config {key}:{index} must be a dict, but got {type(config)}")
                 continue
@@ -66,7 +107,7 @@ class PassManager:
                 candidates = [candidates[index]]
             for func in candidates:
                 pos = self.activated.index(func)
-                self.activated[pos] = partial(func, **config)
+                self.activated[pos] = partial(func, **config)  # type: ignore
                 self.activated[pos].__name__ = key
                 self.activated[pos].__deps__ = func.__deps__
                 self.activated[pos].__patches__ = func.__patches__
@@ -115,10 +156,10 @@ class PassManager:
         for opt in self.activated:
             try:
                 for deps in self._expand_deps(opt.__deps__):
-                    graph = PASSES.get(deps)(graph)
+                    graph = PASSES[deps](graph) if deps in PASSES else graph
                 graph = opt(graph)
                 for patch in self._expand_patches(opt.__patches__):
-                    graph = PASSES.get(patch)(graph)
+                    graph = PASSES[patch](graph) if patch in PASSES else graph
             except Exception as ex:  # pylint: disable=broad-exception-caught
                 error(f"{opt.__name__} failed: {ex}")
                 debug("\n".join(traceback.format_exception(ex)))

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -48,12 +48,13 @@ class ResizeMoveSizeToScaleRewriter(Rewriter):
             )
         if scales is not None:
             return
-        input_shape = graph.tensor_shape(node_pb.input[0])
+        assert sizes is not None
+        input_shape = graph.static_tensor_shape(node_pb.input[0])
         axes = self.get_attribute(node_pb, "axes") or range(len(input_shape))
         ct_mode = self.get_attribute(node_pb, "coordinate_transformation_mode")
-        sizes_val = self.get_value(sizes)
+        sizes_val = self.get_value_or_die(sizes)
         if roi is not None and ct_mode == "tf_crop_and_resize":
-            roi_val = self.get_value(roi).reshape([2, -1])
+            roi_val = self.get_value_or_die(roi).reshape([2, -1])
             roi_size = []
             for i, j, k in zip(roi_val[0], roi_val[1], sizes_val):
                 if i < 0:

@@ -1,18 +1,21 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 """
 
 import inspect
+from copy import deepcopy
 from pathlib import Path
-from typing import Callable, Iterator, List, Optional, Sequence, Type
+from typing import Callable, Dict, Iterator, List, Optional, Sequence, TypeVar, cast
 
 from tabulate import tabulate
 
 from .auto_load import auto_load
 from .rewriter import Rewriter
+
+F = TypeVar("F", bound=Callable)
 
 
 class Registry:
@@ -44,8 +47,8 @@ class Registry:
             return self.func
 
     def __init__(self, name=None, parent: Optional["Registry"] = None) -> None:
-        self._bucks = {}
-        self._configs = {}
+        self._bucks: Dict[str, Registry._FuncWrapper] = {}
+        self._configs: Dict = {}
         self._name = name or "<Registry>"
         self._parent = parent
         if parent is not None:
@@ -80,7 +83,7 @@ class Registry:
             patch (List[str], optional): The hook after the object execution.
         """
 
-        def wrapper(func: Callable | Type[Rewriter]):
+        def wrapper(func: F) -> F:
             if not callable(func):
                 raise TypeError(
                     "the object to be registered must be a function or Rewriter,"
@@ -95,29 +98,32 @@ class Registry:
                 self._bucks[func_wrap.__name__] = func_wrap
                 self._configs[func_wrap.__name__] = inspect.signature(func)
             else:
-                obj: Rewriter = func()  # type: ignore
+                obj = func()  # type: ignore
                 if not (hasattr(obj, "rewrite") and inspect.ismethod(obj.rewrite)):
                     raise TypeError(
                         f"the registered object {func} must be the subclass "
                         "of openvino2onnx.passes.rewriter.Rewriter, but its mro is "
                         f"{func.__mro__}"  # type: ignore
                     )
-                assert callable(obj), f"Wired! {func} is not callable!"
+                assert isinstance(obj, Rewriter)
 
                 # note name is not saved because obj is gc-ed after this function
                 obj.__name__ = name or self._legal_name(func.__name__)
-                self._bucks[obj.__name__] = func
-                self._configs[obj.__name__] = inspect.signature(func.rewrite)
+                self._bucks[obj.__name__] = Registry._FuncWrapper(obj)
+                self._configs[obj.__name__] = inspect.signature(obj.rewrite)
             if self._parent is not None:
                 self._parent.register(name, deps, patch)(func)
-            return func
+            # forward the signature of the original function
+            return cast(F, func)
 
         return wrapper
 
-    def get(self, name: str) -> Optional[Callable | Rewriter]:
+    def get(self, name: str) -> Optional[Callable]:
         """Get a registered object by its name."""
         if name in self._bucks:
             functor = self._bucks[name]()  # create a new instance each time
+            if isinstance(functor, Rewriter):
+                functor = deepcopy(functor)
             functor.__name__ = name  # rename the instance
             return functor
 
@@ -135,6 +141,13 @@ class Registry:
         reg._bucks = {k: self._bucks[k] for k in passes}
         reg._configs = {k: self._configs[k] for k in passes}
         return reg
+
+    def __getitem__(self, name: str) -> Callable:
+        """Get a registered object by its name."""
+        obj = self.get(name)
+        if obj is None:
+            raise KeyError(f"{name} is not registered in {self._name}")
+        return obj
 
     def __iter__(self) -> Iterator[str]:
         """Return an Iterator for all registered functions"""

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -31,8 +31,10 @@ class SpaceToDepthToConvRewriter(Rewriter):
     def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto], to_depthwise=False):
         s2d = nodes[0]
         blocksize = self.get_attribute(s2d, "blocksize")
+        assert isinstance(blocksize, int)
         _, ic, _, _ = graph.tensor_shape(s2d.input[0])
         _, oc, _, _ = graph.tensor_shape(s2d.output[0])
+        assert isinstance(ic, int) and isinstance(oc, int)
         dtype = graph.tensor_type(s2d.input[0])
         assert ic * blocksize**2 == oc, "invalid space2depth parameters"
 

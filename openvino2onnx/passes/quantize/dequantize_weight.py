@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -42,7 +42,9 @@ class ConvDequantizeWeightRewriter(Rewriter):
         except ValueError:
             return  # weight is not quantized type
         # get another mul value
-        scale_value = self.get_value(set(mul.input).difference({cast.output[0]}).pop())
+        scale_value = self.get_value_or_die(
+            set(mul.input).difference({cast.output[0]}).pop()
+        )
         scale_value = scale_value.squeeze()
         if scale_value.ndim == 0:
             scale_value = scale_value[None]
@@ -94,7 +96,9 @@ class GemmDequantizeWeightRewriter(Rewriter):
         except ValueError:
             return  # weight is not quantized type
         # get another mul value
-        scale_value = self.get_value(set(mul.input).difference({cast.output[0]}).pop())
+        scale_value = self.get_value_or_die(
+            set(mul.input).difference({cast.output[0]}).pop()
+        )
         scale_value = scale_value.squeeze()
         if scale_value.ndim == 0:
             scale_value = scale_value[None]
@@ -143,8 +147,11 @@ class RecalculateDequantizeWeightRewriter(Rewriter):
 
     def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto]):
         _, conv = nodes
-        if self.get_input_node(conv, 1).op_type == "DequantizeLinear":
-            return  # skip if weight is already dequantized
+        if op := self.get_input_node(conv, 1):
+            if op.op_type == "DequantizeLinear":
+                return  # skip if weight is already dequantized
+        else:
+            return
 
         weight = self.get_value(conv.input[1])
         if weight is None:

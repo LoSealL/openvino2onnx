@@ -1,11 +1,11 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 """
 
-from pathlib import Path
+import os
 from typing import Optional
 
 import onnx
@@ -25,8 +25,8 @@ _POST_PASSES = [
 
 
 def openvino_xml_to_onnx_graph(
-    model_path: str | Path | onnx.ModelProto,
-    model_bin: Optional[str | Path] = None,
+    model_path: str | os.PathLike | onnx.ModelProto,
+    model_bin: Optional[str | os.PathLike] = None,
 ) -> onnx.ModelProto:
     """Convert OpenVINO IR .xml file to an equivalent ONNX graph.
 
@@ -41,7 +41,7 @@ def openvino_xml_to_onnx_graph(
     elif not isinstance(model_path, onnx.ModelProto):
         ov_onnx = ir_to_onnx(model_path, model_bin)
     else:
-        raise ValueError("model_bin is specified but model_path is given ModelProto")
+        raise ValueError("model_bin is specified but model_path is ModelProto.")
     graph = OnnxGraph(ov_onnx)
     # sort OP_CONVERT here to make sure to put "Trivial" to the end
     passes = set(IR_PASSES).difference(OP_CONVERT)

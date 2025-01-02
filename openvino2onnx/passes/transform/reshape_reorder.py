@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -33,15 +33,15 @@ class ReshapeReorderRewrite(Rewriter):
 
         super().__init__(pattern)
 
-    def check(self, graph, reshape1_node, reshape2_node):
+    def check(self, graph: OnnxGraph, reshape1_node, reshape2_node):
         """check shapes between reshape1 input tensor and reshape2 output tensor"""
         if reshape2_node is None or reshape2_node.op_type != "Reshape":
             return False
 
         # it maybe None if it's generated from other pass
         shape1 = graph.tensor_shape(reshape1_node.input[0])
-        shape2 = self.get_value(self.get_input_node(reshape2_node, 1))
-        valid_shape = shape1 is not None and len(shape1) == len(shape2)
+        shape2 = self.get_value_or_die(self.get_input_node_or_die(reshape2_node, 1))
+        valid_shape = len(shape1) == len(shape2)
         return valid_shape and tuple(shape1) == tuple(shape2)
 
     def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto]):
@@ -70,8 +70,8 @@ class ReshapeReorderRewrite(Rewriter):
             self -= [reshape1_node, quant_node, dequant_node, reshape2_node]
             # remove shape constant
             self -= [
-                self.get_input_node(reshape1_node, 1),
-                self.get_input_node(reshape2_node, 1),
+                self.get_input_node_or_die(reshape1_node, 1),
+                self.get_input_node_or_die(reshape2_node, 1),
             ]
         else:
             new_dequant_node = make_node(

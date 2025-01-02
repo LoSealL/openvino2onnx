@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -37,8 +37,12 @@ class MatMul(BaseNodeConversion):
         self += trans_node
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        transpose_a = text_to_boolean(self.get_attribute(ori_node, "transpose_a"))
-        transpose_b = text_to_boolean(self.get_attribute(ori_node, "transpose_b"))
+        transpose_a = self.get_attribute(ori_node, "transpose_a")
+        assert isinstance(transpose_a, str)
+        transpose_a = text_to_boolean(transpose_a)
+        transpose_b = self.get_attribute(ori_node, "transpose_b")
+        assert isinstance(transpose_b, str)
+        transpose_b = text_to_boolean(transpose_b)
         if transpose_a:
             self._add_transpose(graph, ori_node, 0)
         if transpose_b:

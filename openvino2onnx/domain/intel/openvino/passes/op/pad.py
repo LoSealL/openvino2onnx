@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -27,13 +27,14 @@ class Pad(BaseNodeConversion):
         if mode in ("symmetric",):
             raise ValueError(f"Pad {ori_node.name} has unsupported pad mode: {mode}")
 
-        begin = self.get_value(ori_node.input[1])
-        end = self.get_value(ori_node.input[2])
+        begin = self.get_value_or_die(ori_node.input[1])
+        end = self.get_value_or_die(ori_node.input[2])
         if len(ori_node.input) > 3:
             const_value = self.get_value(ori_node.input[3])
             if const_value is not None:
                 ori_node.input[2] = ori_node.input[3]
             ori_node.input.pop(3)
+        # pads must be int64
         pads = make_constant(
             f"{ori_node.name}/pads", np.concatenate([begin, end]).astype(np.int64)
         )

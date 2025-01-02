@@ -1,15 +1,15 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 """
 
 from contextlib import suppress
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, overload
 
 
-def text_to_boolean(text: Literal["0", "1", "false", "true"]) -> bool:
+def text_to_boolean(text: str | Literal["0", "1", "false", "true"]) -> bool:
     """Convert common text to bool
 
     Args:
@@ -22,7 +22,17 @@ def text_to_boolean(text: Literal["0", "1", "false", "true"]) -> bool:
     return text.lower() == "true"
 
 
-def text_to_integers(text: Optional[str]) -> List[int]:
+@overload
+def text_to_integers(text: None) -> None:
+    """Convert comma-separated text to list of integers"""
+
+
+@overload
+def text_to_integers(text: str) -> List[int]:
+    """Convert comma-separated text to list of integers"""
+
+
+def text_to_integers(text: Optional[str]) -> List[int] | None:
     """Convert comma-separated text to list of integers
 
     Args:

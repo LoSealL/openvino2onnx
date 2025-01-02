@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -42,10 +42,10 @@ class Resize(Rewriter):
         if ori_axes := self.get_attribute(node, "axes"):
             input_shape = graph.tensor_shape(node.input[0])
             input_rank = len(input_shape)
-            axes = [i if i >= 0 else i + input_rank for i in ori_axes]
+            axes = [i if i >= 0 else i + input_rank for i in ori_axes]  # type: ignore
             missing_axes = set(range(input_rank)) - set(axes)
-            scales = self.get_input_node(node, 2)
-            scales_value = self.get_value(scales)
+            scales = self.get_input_node_or_die(node, 2)
+            scales_value = self.get_value_or_die(scales)
             dtype = scales_value.dtype
             scales_value = {axis: scales_value[i] for i, axis in enumerate(axes)}
             scales_value.update({axis: 1.0 for axis in missing_axes})
@@ -55,12 +55,14 @@ class Resize(Rewriter):
             node.input[2] = new_scales.output[0]
             self -= scales
             self += new_scales
+            keep_aspect_ratio_policy = self.get_attribute(
+                node, "keep_aspect_ratio_policy"
+            )
+            if keep_aspect_ratio_policy in ("not_larger", "not_smaller"):
+                # rescale should use the original axes to specify the min/max range of
+                # scales value.
+                self._rescale(node, keep_aspect_ratio_policy, axes, scales_value)
         self.remove_attribute(node, "axes")
-        keep_aspect_ratio_policy = self.get_attribute(node, "keep_aspect_ratio_policy")
-        if keep_aspect_ratio_policy in ("not_larger", "not_smaller"):
-            # rescale should use the original axes to specify the min/max range of
-            # scales value.
-            self._rescale(node, keep_aspect_ratio_policy, ori_axes, scales_value)
         self.remove_attribute(node, "keep_aspect_ratio_policy")
 
     def _rescale(

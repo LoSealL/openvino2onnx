@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -34,11 +34,11 @@ class PriorBoxClustered(BaseNodeConversion):
         attrs = dict(
             width=_to_floats(self.get_attribute(ori_node, "width")) or [1.0],
             height=_to_floats(self.get_attribute(ori_node, "height")) or [1.0],
-            clip=text_to_boolean(self.get_attribute(ori_node, "clip")),
-            step=float(self.get_attribute(ori_node, "step") or 0),
-            step_w=float(self.get_attribute(ori_node, "step_w") or 0),
-            step_h=float(self.get_attribute(ori_node, "step_h") or 0),
-            offset=float(self.get_attribute(ori_node, "offset")),
+            clip=text_to_boolean(self.get_attribute(ori_node, "clip")),  # type: ignore
+            step=float(self.get_attribute(ori_node, "step") or 0),  # type: ignore
+            step_w=float(self.get_attribute(ori_node, "step_w") or 0),  # type: ignore
+            step_h=float(self.get_attribute(ori_node, "step_h") or 0),  # type: ignore
+            offset=float(self.get_attribute(ori_node, "offset")),  # type: ignore
             variance=_to_floats(self.get_attribute(ori_node, "variance")),
         )
         output_size = self.get_value(ori_node.input[0])

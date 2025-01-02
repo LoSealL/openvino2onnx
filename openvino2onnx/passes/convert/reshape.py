@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -69,6 +69,7 @@ def reset_model_batch(graph: OnnxGraph, **kwargs):
     kwargs.setdefault("batch", 1)
     kwargs.setdefault("batch_size", 1)
     batch = kwargs.get("batch") or kwargs.get("batch_size")
+    assert isinstance(batch, int) and batch > 0
     for _, input_info in enumerate(graph.input):
         input_info.type.tensor_type.shape.dim[0].dim_value = batch
     for _, output_info in enumerate(graph.output):

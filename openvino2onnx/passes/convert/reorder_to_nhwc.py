@@ -1,11 +1,11 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 """
 
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from onnx.helper import make_node, make_tensor_type_proto, make_value_info
@@ -14,8 +14,10 @@ from openvino2onnx.graph import OnnxGraph
 from openvino2onnx.passes import PASSES
 
 
-@PASSES.register()
-def reorder_to_nhwc(graph: OnnxGraph, input_names: List[str] = None) -> OnnxGraph:
+@PASSES.register(deps=["infer_shape"])
+def reorder_to_nhwc(
+    graph: OnnxGraph, input_names: Optional[List[str]] = None
+) -> OnnxGraph:
     """Reorder input tensor to NHWC format by inserting a dummy transpose op.
 
     Args:
@@ -27,7 +29,7 @@ def reorder_to_nhwc(graph: OnnxGraph, input_names: List[str] = None) -> OnnxGrap
         OnnxGraph: the rewritten graph
     """
 
-    input_feeds = {}
+    input_feeds: Dict[str, Tuple[List[int | str] | None, int]] = {}
     for input_name in graph.inputs:
         input_shape = graph.tensor_shape(input_name)
         if len(input_shape) == 4:
@@ -38,6 +40,7 @@ def reorder_to_nhwc(graph: OnnxGraph, input_names: List[str] = None) -> OnnxGrap
         return graph
 
     for input_name, (input_shape, dtype) in input_feeds.items():
+        assert input_shape is not None
         permute = make_node(
             "Transpose",
             inputs=[f"{input_name}_nhwc"],

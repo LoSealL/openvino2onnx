@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -26,6 +26,6 @@ class AveragePool(Rewriter):
     def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto], *args, **kwargs):
         node = nodes[0]
         dilations = self.get_attribute(node, "dilations")
-        if dilations is not None and any(d != 1 for d in dilations):
+        if dilations is not None and any(d != 1 for d in dilations):  # type: ignore
             raise ValueError("Dilations not supported in AveragePool below opset 19.")
         self.remove_attribute(node, "dilations")

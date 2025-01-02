@@ -1,13 +1,13 @@
 """An Open Neural Network Exchange (ONNX) Optimization and Transformation Tool.
 
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 
 """
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 
 import os
 from copy import deepcopy

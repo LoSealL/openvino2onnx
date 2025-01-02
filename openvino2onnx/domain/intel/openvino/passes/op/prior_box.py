@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -35,7 +35,7 @@ class PriorBox(BaseNodeConversion):
         layer_shape = self.get_value(ori_node.input[0])
         image_shape = self.get_value(ori_node.input[1])
         if layer_shape is None or image_shape is None:
-            return
+            return ori_node
         out_shape, out_dtype = graph.tensor_info(ori_node.output[0])
         layer_shape = constant(layer_shape, name="layer_shape")
         image_shape = constant(image_shape, name="image_shape")
@@ -47,22 +47,23 @@ class PriorBox(BaseNodeConversion):
             density=_to_floats(self.get_attribute(ori_node, "density")),
             fixed_ratio=_to_floats(self.get_attribute(ori_node, "fixed_ratio")),
             fixed_size=_to_floats(self.get_attribute(ori_node, "fixed_size")),
-            clip=text_to_boolean(self.get_attribute(ori_node, "clip")),
-            flip=text_to_boolean(self.get_attribute(ori_node, "flip")),
-            step=float(self.get_attribute(ori_node, "step")),
-            offset=float(self.get_attribute(ori_node, "offset") or 0),
+            clip=text_to_boolean(self.get_attribute(ori_node, "clip")),  # type: ignore
+            flip=text_to_boolean(self.get_attribute(ori_node, "flip")),  # type: ignore
+            step=float(self.get_attribute(ori_node, "step")),  # type: ignore
+            offset=float(self.get_attribute(ori_node, "offset") or 0),  # type: ignore
             variance=_to_floats(self.get_attribute(ori_node, "variance")),
             scale_all_sizes=text_to_boolean(
-                self.get_attribute(ori_node, "scale_all_sizes")
+                self.get_attribute(ori_node, "scale_all_sizes")  # type: ignore
             ),
         )
         if order := self.get_attribute(ori_node, "min_max_aspect_ratios_order"):
+            assert isinstance(order, str)
             pb_attrs["min_max_aspect_ratios_order"] = text_to_boolean(order)
         prior_node = prior_box(layer_shape, image_shape, pb_attrs)
         model = Model([prior_node], [])
         compiled_model = compile_model(model, "CPU")
         value = compiled_model()[-1]
-        assert value.shape == tuple(out_shape)
+        assert out_shape is not None and value.shape == tuple(out_shape)
         assert value.dtype == TENSOR_TYPE_MAP[out_dtype].np_dtype
 
         return make_node(

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -33,8 +33,6 @@ def attribute_value(attr: AttributeProto):
             return attr.s.decode("utf-8")
         case AttributeProto.TENSOR:
             return numpy_helper.to_array(attr.t)
-        case AttributeProto.GRAPH:
-            return attr.g
         case AttributeProto.TYPE_PROTO:
             return attr.tp
         case AttributeProto.FLOATS:

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -69,6 +69,7 @@ class ReorderTransposeToDownstreamRewriter(Rewriter):
             return
 
         perm = self.get_attribute(trans_node, "perm")
+        assert isinstance(perm, list)
         for node in allowed_and_connected:
             if node.op_type in self._unary_ops:
                 continue
@@ -82,10 +83,14 @@ class ReorderTransposeToDownstreamRewriter(Rewriter):
                         graph,
                         node,
                         node.input[1] if node.input[0] in tracing else node.input[0],
-                        perm,
+                        perm,  # type: ignore
                     )
             elif node.op_type in self._reaxis_ops:
-                self._rewrite_reaxis_op(graph, node, perm)
+                self._rewrite_reaxis_op(
+                    graph,
+                    node,
+                    perm,  # type: ignore
+                )
             else:
                 raise NotImplementedError(f"Unsupported op {node.op_type}")
 
@@ -158,6 +163,7 @@ class ReorderTransposeToDownstreamRewriter(Rewriter):
     def _rewrite_reaxis_op(self, graph: OnnxGraph, node: NodeProto, perm: List[int]):
         axis = self.get_attribute(node, "axis")
         if axis is not None:
+            assert isinstance(axis, int)
             if axis < 0:
                 axis += len(perm)
             new_axis = perm.index(axis)

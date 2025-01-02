@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -30,7 +30,9 @@ class StridedSlice(BaseNodeConversion):
             ori_node.input.append(ori_node.input[3])
         ori_node.input[3] = ""
         begin_mask = self.get_attribute(ori_node, "begin_mask")
+        assert isinstance(begin_mask, str)
         end_mask = self.get_attribute(ori_node, "end_mask")
+        assert isinstance(end_mask, str)
         begin_mask = list(map(int, begin_mask.split(",")))
         end_mask = list(map(int, end_mask.split(",")))
         shrink_axis_mask = self.get_attribute(ori_node, "shrink_axis_mask")
@@ -38,8 +40,8 @@ class StridedSlice(BaseNodeConversion):
         if any(i != 0 for i in begin_mask + end_mask):
             # adjust begin and end
             data_shape = graph.tensor_shape(ori_node.input[0])
-            begin_var = self.get_value(ori_node.input[1]).copy()
-            end_var = self.get_value(ori_node.input[2]).copy()
+            begin_var = self.get_value_or_die(ori_node.input[1]).copy()
+            end_var = self.get_value_or_die(ori_node.input[2]).copy()
             for i, x in enumerate(begin_mask):
                 begin_var[i] = 0 if x != 0 else begin_var[i]
             for i, x in enumerate(end_mask):
@@ -52,6 +54,7 @@ class StridedSlice(BaseNodeConversion):
         if not shrink_axis_mask:
             shrink_axis_mask = []
         else:
+            assert isinstance(shrink_axis_mask, str)
             shrink_axis_mask = list(map(int, shrink_axis_mask.split(",")))
         if any(i != 0 for i in shrink_axis_mask):
             # add a squeeze after slice

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -21,8 +21,9 @@ class Split(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        axis = self.get_value(ori_node.input[1])
+        axis = self.get_value_or_die(ori_node.input[1])
         num_splits = self.get_attribute(ori_node, "num_splits")
+        assert isinstance(num_splits, (int, float, str))
         return make_node(
             "Split",
             inputs=[ori_node.input[0]],

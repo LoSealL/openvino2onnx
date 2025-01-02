@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -51,6 +51,7 @@ class SplitConvOutChannelRewriter(Rewriter):
 
     def _split_conv(self, node, weight_value, bias_value):
         group = self.get_attribute(node, "group") or 1
+        assert isinstance(group, int)
         if group > 1:
             assert weight_value.shape[1] == 1, "not a depthwise convolution"
         out_channels = weight_value.shape[0]
@@ -81,7 +82,7 @@ class SplitConvOutChannelRewriter(Rewriter):
                 inputs=[node.input[0], new_weight.output[0]] + bias,
                 outputs=[f"{node.output[0]}_{i}"],
                 name=f"{node.name}_{i}",
-                **self._conv_attrs(node),
+                **self._conv_attrs(node),  # type: ignore
             )
             if group > 1:
                 self.set_attribute(new_conv, "group", channel_splits[i])
@@ -136,6 +137,7 @@ class SplitConvOutChannelRewriter(Rewriter):
             )
             return
         if group := self.get_attribute(node, "group"):
+            assert isinstance(group, int)
             if group > 1 and group != weight_value.shape[0]:
                 return
         self._split_conv(node, weight_value, bias_value)

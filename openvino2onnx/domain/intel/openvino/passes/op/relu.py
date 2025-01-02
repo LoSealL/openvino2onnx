@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -10,6 +10,7 @@ from onnx.onnx_pb import NodeProto
 
 from openvino2onnx import OPENVINO2ONNX_OPSET
 from openvino2onnx.graph import OnnxGraph
+from openvino2onnx.passes.rewriter import Rewriter
 
 from . import OP_CONVERT, BaseNodeConversion
 
@@ -64,7 +65,9 @@ class Gelu(BaseNodeConversion):
         self.register_post_hook(self.post_hook)
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        approximate = self.get_attribute(ori_node, "approximation_mode").lower()
+        approximate = self.get_attribute(ori_node, "approximation_mode")
+        assert isinstance(approximate, str)
+        approximate = approximate.lower()
         return make_node(
             "Gelu",
             inputs=ori_node.input,
@@ -81,7 +84,8 @@ class Gelu(BaseNodeConversion):
         )
 
         if OPENVINO2ONNX_OPSET.version < 20:
-            return hook()(graph)
+            rewriter: Rewriter = hook()  # type: ignore
+            return rewriter(graph)
         return graph
 
 
@@ -93,8 +97,8 @@ class Selu(BaseNodeConversion):
     """
 
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
-        alpha = float(self.get_value(ori_node.input[1]).squeeze())
-        gamma = float(self.get_value(ori_node.input[2]).squeeze())
+        alpha = float(self.get_value_or_die(ori_node.input[1]).squeeze())
+        gamma = float(self.get_value_or_die(ori_node.input[2]).squeeze())
         return make_node(
             "Selu",
             inputs=[ori_node.input[0]],

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -8,7 +8,7 @@ Copyright Wenyi Tang 2024
 import re
 from abc import ABCMeta, abstractmethod
 from itertools import chain, product
-from typing import Any, Iterable, List, Optional
+from typing import Any, Iterable, List, Optional, Sequence, Set
 
 import networkx as nx
 from networkx.algorithms.isomorphism import DiGraphMatcher
@@ -55,7 +55,7 @@ class OrPattern(Pattern):
     """A special pattern to match either p1 or p2."""
 
     def __init__(self, p1: Pattern, p2: Pattern):
-        self.patterns = []
+        self.patterns: List[Pattern] = []
         if isinstance(p1, OrPattern):
             self.patterns.extend(p1.patterns)
         else:
@@ -78,9 +78,9 @@ class SingleNodePattern(Pattern):
         self.op_type = op_type
         self.op_name = op_name
         self.attr: List[str | AttributeProto] = []
-        self.inputs = None
-        self.outputs = None
-        self.domain = None
+        self.inputs: Optional[Sequence[str | None]] = None
+        self.outputs: Optional[Sequence[str | None]] = None
+        self.domain: Optional[str] = None
         self.id = SingleNodePattern.__id__
         SingleNodePattern.__id__ += 1
 
@@ -258,13 +258,13 @@ class GraphPattern(Pattern, nx.DiGraph):
             assert all(isinstance(n, SingleNodePattern) for n in dag.nodes)
         super().__init__(dag)
 
-    def add_node(self, node_for_adding, **attr) -> "GraphPattern":
+    def add_node(self, node_for_adding, **attr) -> "GraphPattern":  # type: ignore
         assert isinstance(node_for_adding, Pattern)
         attr.update(pattern=node_for_adding)
         super().add_node(node_for_adding, **attr)
         return self
 
-    def add_edge(self, u_of_edge, v_of_edge, **attr) -> "GraphPattern":
+    def add_edge(self, u_of_edge, v_of_edge, **attr) -> "GraphPattern":  # type: ignore
         assert isinstance(u_of_edge, Pattern)
         assert isinstance(v_of_edge, Pattern)
         self.add_node(u_of_edge)
@@ -384,22 +384,25 @@ class StartEndPointPattern(Pattern):
         self.end = end_pattern
 
     def match(self, graph: OnnxGraph):
-        for start, end in product(self.start.match(graph), self.end.match(graph)):
+        for beg, end in product(self.start.match(graph), self.end.match(graph)):
             g = graph.copy(as_view=False)
-            if hasattr(start, "__len__") and len(start) > 1:
-                start = self._merge_subgraph(g, start)
+            assert isinstance(g, OnnxGraph)
+            if hasattr(beg, "__len__") and len(beg) > 1:  # type: ignore
+                beg = self._merge_subgraph(g, beg)
             else:
-                start = start[0] if hasattr(start, "__getitem__") else start
-                start = start.name
-            if hasattr(end, "__len__") and len(end) > 1:
+                beg = beg[0] if hasattr(beg, "__getitem__") else beg  # type: ignore
+                assert isinstance(beg, NodeProto)
+                beg = beg.name
+            if hasattr(end, "__len__") and len(end) > 1:  # type: ignore
                 end = self._merge_subgraph(g, end)
             else:
-                end = end[0] if hasattr(end, "__getitem__") else end
+                end = end[0] if hasattr(end, "__getitem__") else end  # type: ignore
+                assert isinstance(end, NodeProto)
                 end = end.name
             # search for a path from start to end
-            matched_nodes = set()
+            matched_nodes: Set[NodeProto] = set()
             try:
-                paths = nx.all_simple_paths(g, start, end)
+                paths = nx.shortest_simple_paths(g, beg, end)
                 for i in [node for nodes in paths for node in nodes]:
                     if isinstance(i, nx.DiGraph):
                         matched_nodes.update(i.nodes[j]["pb"] for j in i)
@@ -411,7 +414,9 @@ class StartEndPointPattern(Pattern):
 
     def _merge_subgraph(self, graph: nx.DiGraph, nodes):
         """Merge subgraph into a single node."""
-        h: nx.DiGraph = graph.subgraph([n.name for n in nodes]).copy(as_view=False)
+        h: nx.DiGraph = graph.subgraph([n.name for n in nodes]).copy(  # type: ignore
+            as_view=False,
+        )
         pred_nodes = set()
         for in_node in filter(lambda i: h.in_degree(i) == 0, h):
             pred_nodes.update(graph.predecessors(in_node))
