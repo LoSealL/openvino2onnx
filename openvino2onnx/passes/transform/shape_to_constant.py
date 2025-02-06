@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -29,9 +29,7 @@ class ShapeToConstantPass(Rewriter):
     def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto]):
         node = nodes[0]
         try:
-            shape = graph.tensor_shape(node.input[0])
-            if not shape or not all(isinstance(i, int) for i in shape):
-                return  # dynamic shape
+            shape = graph.static_tensor_shape(node.input[0])
         except ValueError:
             # shape is not constant
             return

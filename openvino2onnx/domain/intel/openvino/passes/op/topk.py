@@ -10,7 +10,7 @@ from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto, TensorProto
 
 from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes.utils import make_constant
+from openvino2onnx.passes.utils import cast_in, cast_out, make_constant
 
 from . import OP_CONVERT, BaseNodeConversion
 
@@ -25,15 +25,7 @@ class TopK(BaseNodeConversion):
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         k_type = graph.tensor_type(ori_node.input[1])
         if k_type == TensorProto.INT32:
-            cast_node = make_node(
-                "Cast",
-                inputs=[ori_node.input[1]],
-                outputs=[f"{ori_node.name}/Cast/K"],
-                name=f"{ori_node.name}/Cast",
-                to=TensorProto.INT64,
-            )
-            ori_node.input[1] = cast_node.output[0]
-            self += cast_node
+            self += cast_in(ori_node, 1, TensorProto.INT64)
         k_shape = make_constant(f"{ori_node}/Kshape", np.array([1], dtype=np.int64))
         reshape_k = make_node(
             "Reshape",
@@ -45,15 +37,7 @@ class TopK(BaseNodeConversion):
         self += [k_shape, reshape_k]
         index_element_type = self.get_attribute(ori_node, "index_element_type")
         if index_element_type == "i32":
-            cast_out = make_node(
-                "Cast",
-                inputs=[f"{ori_node.name}/Cast1/Out"],
-                outputs=[ori_node.output[1]],
-                name=f"{ori_node.name}/Cast1",
-                to=TensorProto.INT32,
-            )
-            ori_node.output[1] = cast_out.input[0]
-            self += cast_out
+            self += cast_out(ori_node, 1, TensorProto.INT32)
         axis = self.get_attribute(ori_node, "axis")
         assert isinstance(axis, (str, float, int))
         mode = self.get_attribute(ori_node, "mode")

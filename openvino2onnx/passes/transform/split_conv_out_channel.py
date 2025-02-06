@@ -66,6 +66,8 @@ class SplitConvOutChannelRewriter(Rewriter):
         weight_splits = np.split(weight_value, channel_indices[:-1], axis=0)
         if bias_value is not None:
             bias_splits = np.split(bias_value, channel_indices[:-1], axis=0)
+        else:
+            bias_splits = []
         convs = []
         channel_indices = [0] + channel_indices.tolist()
         for i, _ in enumerate(channel_splits):

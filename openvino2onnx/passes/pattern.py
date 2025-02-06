@@ -8,12 +8,12 @@ Copyright Wenyi Tang 2024-2025
 import re
 from abc import ABCMeta, abstractmethod
 from itertools import chain, product
-from typing import Any, Iterable, List, Optional, Sequence, Set
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Sized
 
 import networkx as nx
 from networkx.algorithms.isomorphism import DiGraphMatcher
 from onnx import AttributeProto, NodeProto
-from onnx.helper import make_attribute
+from onnx.helper import get_attribute_value, make_attribute
 
 from openvino2onnx.graph import OnnxGraph
 
@@ -77,7 +77,7 @@ class SingleNodePattern(Pattern):
     def __init__(self, op_type: Optional[str] = None, op_name: Optional[str] = None):
         self.op_type = op_type
         self.op_name = op_name
-        self.attr: List[str | AttributeProto] = []
+        self.attr: List[AttributeProto] = []
         self.inputs: Optional[Sequence[str | None]] = None
         self.outputs: Optional[Sequence[str | None]] = None
         self.domain: Optional[str] = None
@@ -106,35 +106,37 @@ class SingleNodePattern(Pattern):
         ]
         return all(conditions)
 
-    def _check_type(self, node):
+    def _check_type(self, node: NodeProto):
         return self.op_type == node.op_type or self.op_type is None
 
-    def _check_name(self, node):
+    def _check_name(self, node: NodeProto):
         return self.op_name == node.name or self.op_name is None
 
-    def _check_attr(self, node):
+    def _check_attr(self, node: NodeProto):
         if not self.attr:
             return True
-        match_table = {}  # all attribute to check
+        match_table: Dict[str, AttributeProto] = {}  # all attribute to check
         for attr in self.attr:
-            if isinstance(attr, str):
-                match_table[attr] = None
-            else:
-                match_table[attr.name] = attr
+            match_table[attr.name] = attr
         matched = 0  # matched number of attributes
         for attr in node.attribute:
             if attr.name in match_table:
                 matched += 1 if self._match_attr(match_table[attr.name], attr) else 0
         return matched == len(match_table)
 
-    def _match_attr(self, attr0, attr1):
-        if attr0 is None or attr1 is None:
+    def _match_attr(self, attr0: AttributeProto, attr1: AttributeProto):
+        def _is_any(v):
+            if v.type == AttributeProto.STRING:
+                return get_attribute_value(v).decode() == "__ANY__"
+            return False
+
+        if _is_any(attr0) or _is_any(attr1):
             return True
         if attr0.type != attr1.type:
             return False
         return attribute_value(attr0) == attribute_value(attr1)
 
-    def _check_inputs(self, node, graph: OnnxGraph):
+    def _check_inputs(self, node: NodeProto, graph: OnnxGraph):
         if self.inputs is None or graph is None:
             return True
         input_nodes = [i.name for i in graph.onnx_predecessors(node)]
@@ -144,7 +146,7 @@ class SingleNodePattern(Pattern):
             return False
         return all(i is None or i in set(input_nodes) for i in self.inputs)
 
-    def _check_outputs(self, node, graph: OnnxGraph):
+    def _check_outputs(self, node: NodeProto, graph: OnnxGraph):
         if self.outputs is None or graph is None:
             return True
         output_nodes = [i.name for i in graph.onnx_successors(node)]
@@ -152,7 +154,7 @@ class SingleNodePattern(Pattern):
             return False
         return all(i is None or i in set(output_nodes) for i in self.outputs)
 
-    def _check_domain(self, node):
+    def _check_domain(self, node: NodeProto):
         if not self.domain:
             # do not compare if self.domain is not specified
             return self.domain is None or node.domain in ("", "ai.onnx")
@@ -180,7 +182,7 @@ class SingleNodePattern(Pattern):
         elif value is not None:
             self.attr.append(make_attribute(name, value))
         else:
-            self.attr.append(name)
+            self.attr.append(make_attribute(name, "__ANY__"))
         return self
 
     def with_name(self, name: str) -> "SingleNodePattern":
@@ -387,22 +389,20 @@ class StartEndPointPattern(Pattern):
         for beg, end in product(self.start.match(graph), self.end.match(graph)):
             g = graph.copy(as_view=False)
             assert isinstance(g, OnnxGraph)
-            if hasattr(beg, "__len__") and len(beg) > 1:  # type: ignore
-                beg = self._merge_subgraph(g, beg)
+            if isinstance(beg, Sized) and len(beg) > 1:
+                beg_node = self._merge_subgraph(g, beg)
             else:
-                beg = beg[0] if hasattr(beg, "__getitem__") else beg  # type: ignore
-                assert isinstance(beg, NodeProto)
-                beg = beg.name
-            if hasattr(end, "__len__") and len(end) > 1:  # type: ignore
-                end = self._merge_subgraph(g, end)
+                beg = beg[0] if isinstance(beg, Sequence) else beg
+                beg_node = beg.name
+            if isinstance(end, Sized) and len(end) > 1:
+                end_node = self._merge_subgraph(g, end)
             else:
-                end = end[0] if hasattr(end, "__getitem__") else end  # type: ignore
-                assert isinstance(end, NodeProto)
-                end = end.name
+                end = end[0] if isinstance(end, Sequence) else end
+                end_node = end.name
             # search for a path from start to end
             matched_nodes: Set[NodeProto] = set()
             try:
-                paths = nx.shortest_simple_paths(g, beg, end)
+                paths = nx.shortest_simple_paths(g, beg_node, end_node)
                 for i in [node for nodes in paths for node in nodes]:
                     if isinstance(i, nx.DiGraph):
                         matched_nodes.update(i.nodes[j]["pb"] for j in i)
@@ -417,10 +417,10 @@ class StartEndPointPattern(Pattern):
         h: nx.DiGraph = graph.subgraph([n.name for n in nodes]).copy(  # type: ignore
             as_view=False,
         )
-        pred_nodes = set()
+        pred_nodes: Set[NodeProto] = set()
         for in_node in filter(lambda i: h.in_degree(i) == 0, h):
             pred_nodes.update(graph.predecessors(in_node))
-        succ_nodes = set()
+        succ_nodes: Set[NodeProto] = set()
         for out_node in filter(lambda o: h.out_degree(o) == 0, h):
             succ_nodes.update(graph.successors(out_node))
         graph.remove_nodes_from([n.name for n in nodes])

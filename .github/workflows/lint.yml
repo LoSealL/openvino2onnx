@@ -26,3 +26,25 @@ jobs:
       - name: lint with pre-commit
         # check all commits from main
         run: pre-commit run -s HEAD^ -o HEAD
+  run-pyright:
+    runs-on: [ubuntu-latest]
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/Jod
+      - name: pyright type check
+        run: |
+          python -m pip install -U pyright
+          python -m pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+          python -m pip install onnxscript onnxruntime openvino onnxoptimizer onnxsim colorlog
+          python -m pip install -e .
+          pyright openvino2onnx

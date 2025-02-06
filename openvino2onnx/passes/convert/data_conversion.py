@@ -1,20 +1,24 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
+
 """
 
 # pylint: disable=arguments-differ
 
 import itertools
+import re
 
+import onnx
 from onnx import TensorProto
 from onnx.helper import make_attribute
 from onnx.numpy_helper import from_array, to_array
 
 from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes import L1, PASSES
+from openvino2onnx.passes import L1, PASSES, logger
+from openvino2onnx.passes.utils import cast_in
 
 
 @L1.register()
@@ -46,6 +50,22 @@ def half_to_float(graph: OnnxGraph) -> OnnxGraph:
     return graph
 
 
+def canonicalize_resize(graph: OnnxGraph, op_name: str):
+    """The scales input of Resize must be float32."""
+    assert op_name in graph.nodes
+    node_pb = graph.nodes[op_name]["pb"]
+    scales = node_pb.input[2]
+    if scales:
+        graph.add_onnx_node(cast_in(node_pb, 2, TensorProto.FLOAT))
+
+
+def dtype_canonicalize(graph: OnnxGraph, op_type: str, op_name: str):
+    """Canonicalize data type for operators that don't support fp16."""
+    if op_type == "Resize":
+        canonicalize_resize(graph, op_name)
+    # TODO: add more operators here
+
+
 @PASSES.register()
 def float_to_half(graph: OnnxGraph) -> OnnxGraph:
     """Convert float32 consts and values to half."""
@@ -67,4 +87,12 @@ def float_to_half(graph: OnnxGraph) -> OnnxGraph:
     for io in itertools.chain(graph.input, graph.output):
         if io.type.tensor_type.elem_type == TensorProto.FLOAT:
             io.type.tensor_type.elem_type = TensorProto.FLOAT16
+    # fix operators that don't support fp16
+    try:
+        onnx.checker.check_model(graph.model, full_check=True)
+    except onnx.shape_inference.InferenceError as e:
+        op_type = re.findall(r"op_type\:(\w+)", f"{e}")[0]
+        op_name = re.findall(r"node name\: (.*)\)", f"{e}")[0]
+        logger.debug(f"Operator {op_name}({op_type}) check failed, fixing it...")
+        dtype_canonicalize(graph, op_type, op_name)
     return graph

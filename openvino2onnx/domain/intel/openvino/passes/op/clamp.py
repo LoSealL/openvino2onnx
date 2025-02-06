@@ -31,14 +31,14 @@ class Clamp(BaseNodeConversion):
         except ValueError:
             prec = graph.tensor_type(ori_node.input[0])
         dtype = TENSOR_TYPE_MAP[prec].np_dtype
-        min_value = make_constant(
+        min_cst = make_constant(
             f"{ori_node.name}/min", np.array(min_value, dtype=dtype)
         )
-        max_value = make_constant(
+        max_cst = make_constant(
             f"{ori_node.name}/max", np.array(max_value, dtype=dtype)
         )
-        ori_node.input.extend([min_value.output[0], max_value.output[0]])
-        self += [min_value, max_value]
+        ori_node.input.extend([min_cst.output[0], max_cst.output[0]])
+        self += [min_cst, max_cst]
         return make_node(
             "Clip", inputs=ori_node.input, outputs=ori_node.output, name=ori_node.name
         )

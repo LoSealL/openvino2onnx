@@ -13,7 +13,7 @@ from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto
 
 from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes.utils import make_constant
+from openvino2onnx.passes.utils import cast_in, make_constant
 
 from . import OP_CONVERT, BaseNodeConversion
 
@@ -64,15 +64,7 @@ class Interpolate(BaseNodeConversion):
             ori_node.input[1] = ori_node.input[2] = ""
             size_type = graph.tensor_type(ori_node.input[3])
             if size_type != onnx.TensorProto.INT64:
-                cast = make_node(
-                    "Cast",
-                    inputs=[ori_node.input[3]],
-                    outputs=[f"{ori_node.name}/Cast_output0"],
-                    name=f"{ori_node.name}/Cast",
-                    to=onnx.TensorProto.INT64,
-                )
-                ori_node.input[3] = cast.output[0]
-                self += cast
+                self += cast_in(ori_node, 3, onnx.TensorProto.INT64)
         elif shape_calculation_mode == "scales":
             if version == "opset11":
                 ori_node.input[2] = ori_node.input[1]

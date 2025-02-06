@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -12,12 +12,19 @@ from copy import deepcopy
 from typing import List
 from uuid import uuid4
 
+from onnx.inliner import inline_local_functions
 from onnx.onnx_pb import NodeProto
 
 from openvino2onnx.graph import OnnxGraph
 from openvino2onnx.passes import PASSES
 from openvino2onnx.passes.pattern import SingleNodePattern
 from openvino2onnx.passes.rewriter import Rewriter
+
+
+@PASSES.register("inline_local_functions")
+def inline_local_functions_pass(graph: OnnxGraph) -> OnnxGraph:
+    """Inline all local functions in the graph."""
+    return OnnxGraph(inline_local_functions(graph.model))
 
 
 @PASSES.register("inline_functions")
@@ -27,7 +34,7 @@ class InlineFunctionsRewriter(Rewriter):
     def __init__(self):
         super().__init__(SingleNodePattern().with_domain("*"))
 
-    def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto], force: bool = False):
+    def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto], force: bool = True):
         node = nodes[0]
         if node.op_type not in graph.functions:
             raise RuntimeError(f"function {node.op_type} not found in the graph")
@@ -48,22 +55,18 @@ class InlineFunctionsRewriter(Rewriter):
         func_nodes = [deepcopy(node) for node in func.node]
         assert len(func_nodes) == len(node_names) or len(node_names) == 0
 
-        for i, func_input in enumerate(func.input):
-            input_name = node.input[i]
-            for n in func_nodes:
-                for j, node_input in enumerate(n.input):
-                    if node_input == func_input:
-                        n.input[j] = input_name
-                    else:
-                        n.input[j] = f"{tag}/{n.input[j]}"
-        for i, func_output in enumerate(func.output):
-            output_name = node.output[i]
-            for n in func_nodes:
-                for j, node_output in enumerate(n.output):
-                    if node_output == func_output:
-                        n.output[j] = output_name
-                    else:
-                        n.output[j] = f"{tag}/{n.output[j]}"
+        for n in func_nodes:
+            for j, node_input in enumerate(n.input):
+                if node_input in func.input:
+                    n.input[j] = node.input[list(func.input).index(node_input)]
+                else:
+                    n.input[j] = f"{tag}/{n.input[j]}"
+        for n in func_nodes:
+            for j, node_output in enumerate(n.output):
+                if node_output in func.output:
+                    n.output[j] = node.output[list(func.output).index(node_output)]
+                else:
+                    n.output[j] = f"{tag}/{n.output[j]}"
         # step 2: make a copy of each function node appended with identity names
         for i, n in enumerate(func_nodes):
             if not n.name:

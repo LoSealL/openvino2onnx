@@ -7,7 +7,7 @@ Copyright Wenyi Tang 2024-2025
 
 # pylint: disable=arguments-differ
 
-from typing import List
+from typing import List, Sequence
 
 import numpy as np
 from onnx.onnx_pb import NodeProto
@@ -53,6 +53,8 @@ class ResizeMoveSizeToScaleRewriter(Rewriter):
         axes = self.get_attribute(node_pb, "axes") or range(len(input_shape))
         ct_mode = self.get_attribute(node_pb, "coordinate_transformation_mode")
         sizes_val = self.get_value_or_die(sizes)
+        assert isinstance(axes, Sequence)
+        axes = [int(i) for i in axes]  # type: ignore
         if roi is not None and ct_mode == "tf_crop_and_resize":
             roi_val = self.get_value_or_die(roi).reshape([2, -1])
             roi_size = []

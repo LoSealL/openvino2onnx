@@ -56,6 +56,11 @@ class RewriterInterface(metaclass=ABCMeta):
     def __name__(self, value: str):
         """This property can be changed."""
 
+    @property
+    @abstractmethod
+    def num_rewrites(self) -> int:
+        """This property records how many patterns have been matched and rewritten"""
+
 
 class PassManager:
     """Ordered optimization pass list.
@@ -113,10 +118,11 @@ class PassManager:
                 self.activated[pos].__patches__ = func.__patches__
 
     def _expand(self, nodes, priv_member):
-        root = nx.DiGraph()
+        root: nx.DiGraph = nx.DiGraph()
         leaves = [f"{i}:{n}" for i, n in enumerate(nodes)]
         root.add_nodes_from(leaves)
-        shallow = nx.DiGraph()  # a shallow graph to check cyclic dependencies
+        # a shallow graph to check cyclic dependencies
+        shallow: nx.DiGraph = nx.DiGraph()
         shallow.add_nodes_from(nodes)
         ind = len(leaves)
         while leaves:

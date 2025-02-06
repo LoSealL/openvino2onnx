@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -9,6 +9,7 @@ from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto, TensorProto
 
 from openvino2onnx.graph import OnnxGraph
+from openvino2onnx.passes.utils import cast_in
 
 from . import OP_CONVERT, BaseNodeConversion
 
@@ -23,15 +24,7 @@ class Reshape(BaseNodeConversion):
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         shape_type = graph.tensor_type(ori_node.input[1])
         if shape_type != TensorProto.INT64:
-            cast_node = make_node(
-                "Cast",
-                inputs=[ori_node.input[1]],
-                outputs=[f"{ori_node.name}/Cast/shape"],
-                name=f"{ori_node.name}/Cast",
-                to=TensorProto.INT64,
-            )
-            ori_node.input[1] = cast_node.output[0]
-            self += cast_node
+            self += cast_in(ori_node, 1, TensorProto.INT64)
         return make_node(
             "Reshape",
             inputs=ori_node.input,

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -42,8 +42,8 @@ class Gelu(Rewriter):
             erf_node = self.rewrite_tanh(graph, node)
         else:
             erf_node = self.rewrite_erf(graph, node)
-        dtype = graph.tensor_type(node.input[0])
-        dtype = tensor_dtype_to_np_dtype(dtype)
+        etype = graph.tensor_type(node.input[0])
+        dtype = tensor_dtype_to_np_dtype(etype)
         zero_dot_five_cst = make_constant(
             f"{node.name}/zero_dot_five", np.array(0.5, dtype)
         )
@@ -63,8 +63,8 @@ class Gelu(Rewriter):
         self += [zero_dot_five_cst, mul_05, mul]
 
     def rewrite_tanh(self, graph: OnnxGraph, node: NodeProto):
-        dtype = graph.tensor_type(node.input[0])
-        dtype = tensor_dtype_to_np_dtype(dtype)
+        etype = graph.tensor_type(node.input[0])
+        dtype = tensor_dtype_to_np_dtype(etype)
         pow3_cst = make_constant(f"{node.name}/pow3", np.array(3.0, dtype))
         pow3 = make_node(
             "Pow",
@@ -124,8 +124,8 @@ class Gelu(Rewriter):
         return tanh_plus1
 
     def rewrite_erf(self, graph: OnnxGraph, node: NodeProto):
-        dtype = graph.tensor_type(node.input[0])
-        dtype = tensor_dtype_to_np_dtype(dtype)
+        etype = graph.tensor_type(node.input[0])
+        dtype = tensor_dtype_to_np_dtype(etype)
         sqrt2_cst = make_constant(f"{node.name}/sqrt2", np.sqrt(2.0).astype(dtype))
         div_sqrt2 = make_node(
             "Div",

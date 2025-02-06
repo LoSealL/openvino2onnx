@@ -1,14 +1,16 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
 """
 
+import os
 from typing import Dict, Literal, Optional
 
 import numpy as np
 import onnx
+from onnx.helper import tensor_dtype_to_np_dtype
 
 from .evaluator import Evaluator
 from .graph import OnnxGraph
@@ -25,11 +27,11 @@ def show_difference(
 
 
 def check_accuracy(
-    model1: str | onnx.ModelProto,
-    model2: str | onnx.ModelProto,
+    model1: str | os.PathLike | onnx.ModelProto,
+    model2: str | os.PathLike | onnx.ModelProto,
     input_maps: Optional[Dict[str, np.ndarray]] = None,
     backend: Literal["onnx", "onnxruntime", "openvino"] = "onnx",
-) -> Dict[str, float]:
+) -> Dict[str, Dict[str, float]]:
     """
     Check the accuracy of two ONNX models.
 
@@ -43,7 +45,7 @@ def check_accuracy(
             to be used for the comparison. Defaults to "onnx".
 
     Returns:
-        Dict[str, float]: A dictionary containing the accuracy metrics.
+        Dict[str, Dict[str, float]]: A dictionary containing the accuracy metrics.
     """
 
     if not isinstance(model1, onnx.ModelProto):
@@ -54,27 +56,37 @@ def check_accuracy(
     graph2 = OnnxGraph(model2)
 
     if input_maps is None:
-        input_maps = {}
+        input_maps1 = {}
+        input_maps2 = {}
         for input_name in graph1.inputs:
             assert input_name in graph2.inputs
-            shape, etype = graph1.tensor_info(input_name)
-            dtype = onnx.mapping.TENSOR_TYPE_TO_NP_TYPE[etype]
-            input_maps[input_name] = np.random.rand(*shape).astype(dtype)
+            shape = graph1.static_tensor_shape(input_name)
+            etype = graph1.tensor_type(input_name)
+            dtype = tensor_dtype_to_np_dtype(etype)
+            input_maps1[input_name] = np.asarray(np.random.randn(*shape)).astype(dtype)
+            # data type may change
+            etype = graph2.tensor_type(input_name)
+            dtype = tensor_dtype_to_np_dtype(etype)
+            input_maps2[input_name] = input_maps1[input_name].astype(dtype)
+    else:
+        input_maps1 = input_maps
+        input_maps2 = input_maps
     output_maps = graph1.outputs
     for output_name in graph2.outputs:
         assert output_name in output_maps
 
     runner1 = Evaluator(model1, backend)
     runner2 = Evaluator(model2, backend)
-    results1 = runner1(list(output_maps), input_maps)
-    results2 = runner2(list(output_maps), input_maps)
+    results1 = runner1(list(output_maps), input_maps1)
+    results2 = runner2(list(output_maps), input_maps2)
 
-    error_maps = {}
+    error_maps: Dict[str, Dict[str, float]] = {}
     for name, x, y in zip(output_maps, results1, results2):
         abs_error = np.abs(x - y)
-        rel_error = np.abs(x - y) / np.abs(x)
+        rel_mask = np.abs(x) > np.finfo(x.dtype).eps
+        rel_error = np.abs(x - y)[rel_mask] / np.abs(x[rel_mask])
         error_maps[name] = {
             "ABS": abs_error.mean(),
-            "REL": rel_error[np.abs(x) > 1e-8].mean(),
+            "REL": rel_error.mean(),
         }
     return error_maps

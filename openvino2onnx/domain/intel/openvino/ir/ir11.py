@@ -94,8 +94,8 @@ def _load_const(graph, model_bin):
                         # pylint: disable=import-outside-toplevel
                         import torch  # noqa: F401
 
-                        data = torch.frombuffer(raw, dtype=torch.bfloat16)
-                        data = data.to(torch.float16).numpy()
+                        tdata = torch.frombuffer(raw, dtype=torch.bfloat16)
+                        data = tdata.to(torch.float16).numpy()
                     data = np.frombuffer(raw.tobytes(), dtype=dtype).reshape(shape)
                 else:
                     data = np.zeros(shape, dtype=dtype)
@@ -148,7 +148,7 @@ def _graph_to_onnx(graph: nx.MultiDiGraph) -> onnx.ModelProto:
         input_names = [i[1] for i in sorted(input_maps.items(), key=lambda x: x[0])]
         for name, shape, typestr in zip(outputs_name, outputs_shape, outputs_dtype):
             if typestr == "bfloat16":
-                dtype = onnx.TensorProto.BFLOAT16
+                dtype = int(onnx.TensorProto.BFLOAT16)
             else:
                 dtype = DTYPE2TENSORTYPE[np.dtype(typestr)]
             values_info.append(make_tensor_value_info(name, dtype, shape))
@@ -162,7 +162,7 @@ def _graph_to_onnx(graph: nx.MultiDiGraph) -> onnx.ModelProto:
                         par_shape.append(int(dim))
                 typestr = ETYPE2DTYPE[node_attrs.pop("element_type")]
                 if typestr == "bfloat16":
-                    dtype = onnx.TensorProto.BFLOAT16
+                    dtype = int(onnx.TensorProto.BFLOAT16)
                 else:
                     dtype = DTYPE2TENSORTYPE[np.dtype(typestr)]
                 onnx_inputs.append(make_tensor_value_info(node_name, dtype, par_shape))
@@ -175,11 +175,11 @@ def _graph_to_onnx(graph: nx.MultiDiGraph) -> onnx.ModelProto:
                         res_shape[i] = f"Y{i}"
                 if "precision" not in result:
                     logger.warning(f"precision not defined in {node_name}(Result)")
-                    dtype = onnx.TensorProto.UNDEFINED
+                    dtype = int(onnx.TensorProto.UNDEFINED)
                 else:
                     typestr = PREC2DTYPE[result["precision"]]
                     if typestr == "bfloat16":
-                        dtype = onnx.TensorProto.BFLOAT16
+                        dtype = int(onnx.TensorProto.BFLOAT16)
                     else:
                         dtype = DTYPE2TENSORTYPE[np.dtype(typestr)]
                 onnx_outputs.append(make_tensor_value_info(node_name, dtype, res_shape))

@@ -5,6 +5,8 @@ Copyright Wenyi Tang 2024-2025
 :Email: wenyitang@outlook.com
 """
 
+from typing import List, Sequence
+
 import networkx as nx
 
 from openvino2onnx.graph import OnnxGraph
@@ -13,10 +15,10 @@ from openvino2onnx.passes import PASSES, logger
 from . import OP_CONVERTER
 
 
-def _expand_deps(deps):
-    root = nx.DiGraph()
+def _expand_deps(deps: Sequence[str]):
+    root: nx.DiGraph = nx.DiGraph()
     root.add_nodes_from(deps)
-    leaves: list = deps.copy()
+    leaves: List[str] = list(deps).copy()
     while leaves:
         leaf = leaves.pop(0)
         children = PASSES[leaf].__deps__  # type: ignore
