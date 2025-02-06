@@ -5,7 +5,7 @@ Copyright Wenyi Tang 2024-2025
 :Email: wenyitang@outlook.com
 """
 
-from typing import List
+from typing import List, Optional, Sequence
 
 import networkx as nx
 import numpy as np
@@ -169,7 +169,7 @@ class ReorderTransposeToDownstreamRewriter(Rewriter):
             new_axis = perm.index(axis)
             self.set_attribute(node, "axis", new_axis)
         elif node.op_type in ("Pad", "Slice"):
-            axes = None
+            axes: Optional[Sequence[int] | np.ndarray] = None
             if len(node.input) > 3:
                 axes = self.get_value(node.input[3])
             else:

@@ -5,13 +5,75 @@ Copyright Wenyi Tang 2024-2025
 :Email: wenyitang@outlook.com
 """
 
+# pylint: disable=arguments-differ
 from typing import Dict, List, Optional
 
 from onnx import NodeProto, shape_inference
 from onnx.tools.update_model_dims import update_inputs_outputs_dims
 
 from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes import PASSES
+from openvino2onnx.passes import PASSES, Registry, Rewriter, get_pass_manager
+from openvino2onnx.passes.logger import debug, warning
+from openvino2onnx.passes.pattern import SingleNodePattern
+
+INFERSHAPE_PATCH = Registry("INFERSHAPE_PATCH", parent=PASSES)
+
+
+@INFERSHAPE_PATCH.register()
+class InferSplitToSequence(Rewriter):
+    """[BUG] inference shape after SplitToSequence is incorrect.
+
+    Related github issue: [#6656](https://github.com/onnx/onnx/issues/6656)
+    """
+
+    def __init__(self):
+        super().__init__(pattern=SingleNodePattern("SplitToSequence"))
+
+    def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto]):
+        node = nodes[0]
+        input_shape = graph.static_tensor_shape(node.input[0])
+        axis = self.get_attribute(node, "axis", 0)
+        keepdims = self.get_attribute(node, "keepdims", 1)
+        assert isinstance(axis, int) and isinstance(keepdims, int)
+        axis = int(axis)
+        keepdims = bool(keepdims)
+        if len(node.input) > 1:
+            split_arr = self.get_value_or_die(node.input[1])
+            if split_arr.ndim == 0:
+                split = [int(split_arr)] * (input_shape[axis] // split_arr)
+            else:
+                split = [int(i) for i in split_arr]
+            assert sum(split) == input_shape[axis]
+        else:
+            split = [1] * input_shape[axis]
+
+        if all(i == split[0] for i in split):
+            _, dtype = graph.tensor_info(node.output[0])
+            output_shape = input_shape
+            if keepdims or (split[0] > 1):
+                output_shape[axis] //= split[0]
+            else:
+                output_shape.pop(axis)
+            debug(f"SplitToSequence: set output shape to {output_shape}")
+            graph.set_seqeuence_info(node.output[0], output_shape, dtype)
+            return
+        warning("[TODO] if you reach this line, SplitToSequence can't be fixed.")
+
+
+@INFERSHAPE_PATCH.register()
+class InferGroupNormalization(Rewriter):
+    """[BUG] inference shape failed after GroupNormalization."""
+
+    def __init__(self):
+        super().__init__(SingleNodePattern("GroupNormalization"))
+
+    def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto]):
+        node = nodes[0]
+        input_shape, dtype = graph.tensor_info(node.input[0])
+        output_shape, _ = graph.tensor_info(node.output[0])
+        if output_shape is None and input_shape is not None:
+            debug(f"GroupNormalization: set output shape to {input_shape}")
+            graph.set_value_info(node.output[0], input_shape, dtype)
 
 
 @PASSES.register()
@@ -28,18 +90,12 @@ def infer_shape(
         )
     model = shape_inference.infer_shapes(model, data_prop=True)
     graph = OnnxGraph(model)
-    # FIXME This is a workaround for GroupNormalization shape inference issue.
-    # Current ONNX (1.17.0) still can't infer shapes after GN.
+    # Patch for infer_shapes bugs
+    pm = get_pass_manager(list(INFERSHAPE_PATCH))
+    graph = pm.optimize(graph)
     need_second_infer = False
-    for node in graph:
-        node_pb: NodeProto = graph.nodes[node]["pb"]
-        if node_pb.op_type != "GroupNormalization":
-            continue
-        input_shape, dtype = graph.tensor_info(node_pb.input[0])
-        output_shape, _ = graph.tensor_info(node_pb.output[0])
-        if output_shape is None and input_shape is not None:
-            graph.set_value_info(node_pb.output[0], input_shape, dtype)
-            need_second_infer = True
+    if sum(i.num_rewrites for i in pm.activated) > 0:
+        need_second_infer = True
     if need_second_infer:
         model = graph.model
         model = shape_inference.infer_shapes(model, data_prop=True)

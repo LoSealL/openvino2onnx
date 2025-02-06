@@ -19,6 +19,7 @@ from onnx.helper import (
     make_graph,
     make_model,
     make_operatorsetid,
+    make_tensor_sequence_value_info,
     make_tensor_type_proto,
     make_tensor_value_info,
     make_value_info,
@@ -51,7 +52,8 @@ class OnnxGraph(nx.DiGraph):
             # read-only value info
             self._value_info = graph.value_info
             # write-only value info
-            self._value_info_update = []
+            self._value_info_update: List[onnx.ValueInfoProto] = []
+            self._keep_value_info = False
             for node in graph.node:
                 self._add_onnx_node_internal(node)
             self._build_edges()
@@ -211,10 +213,20 @@ class OnnxGraph(nx.DiGraph):
             value_infos = self._value_info
         for value_info in value_infos:
             if value_info.name == name:
-                dtype = value_info.type.tensor_type.elem_type
-                if not value_info.type.tensor_type.HasField("shape"):
+                if value_info.type.HasField("tensor_type"):
+                    tensor_type = value_info.type.tensor_type
+                elif value_info.type.HasField("sequence_type"):
+                    seq_type = value_info.type.sequence_type.elem_type
+                    # for now, sequence type must be a tensor type
+                    if not seq_type.HasField("tensor_type"):
+                        raise TypeError(f"Unsupported sequence type: {seq_type}")
+                    tensor_type = seq_type.tensor_type
+                else:
+                    raise TypeError(f"Unsupported value type: {value_info.type}")
+                dtype = tensor_type.elem_type
+                if not tensor_type.HasField("shape"):
                     break  # no shape info, skip
-                dims = [i for i in value_info.type.tensor_type.shape.dim]
+                dims = [i for i in tensor_type.shape.dim]
                 shape = [0 for _ in dims]
                 for i, s in enumerate(dims):
                     if s.dim_param and s.dim_value == 0:
@@ -326,7 +338,7 @@ class OnnxGraph(nx.DiGraph):
         self._node_to_out[output_node.name] = output_node.output
 
     def set_value_info(
-        self, name: str, shape: List[int | str], dtype: Optional[int] = None
+        self, name: str, shape: Sequence[int | str], dtype: Optional[int] = None
     ):
         """Overwrite the value info of a tensor.
 
@@ -350,6 +362,33 @@ class OnnxGraph(nx.DiGraph):
             )
         self._value_info_update.append(make_tensor_value_info(name, dtype, shape))
 
+    def set_seqeuence_info(
+        self, name: str, shape: Sequence[int | str], dtype: Optional[int] = None
+    ):
+        """Overwrite the value info of a sequence.
+
+        Args:
+            name (str): the name of the sequence.
+            shape (List[int | str]): the shape of the tensor in the sequence.
+            dtype (int, optional): the data type of the tensor. Defaults to None.
+        """
+        for i, info in enumerate(self._value_info):
+            if info.name == name:
+                if dtype is None:
+                    dtype = info.type.tensor_type.elem_type
+                self._value_info.pop(i)
+                self._value_info_update.append(
+                    make_tensor_sequence_value_info(name, dtype, shape)
+                )
+                return
+        if dtype is None:
+            raise ValueError(
+                f"dtype is required because value is not existing for {name}"
+            )
+        self._value_info_update.append(
+            make_tensor_sequence_value_info(name, dtype, shape)
+        )
+
     @property
     def input(self):
         """Return a list of graph inputs value info."""
@@ -364,6 +403,11 @@ class OnnxGraph(nx.DiGraph):
     def initializer(self):
         """Return a list of graph initializer tensors."""
         return self._model.graph.initializer
+
+    @property
+    def initializers(self) -> Dict[str, onnx.TensorProto]:
+        """Return a dict of graph initializer tensors."""
+        return {i.name: i for i in self.initializer}
 
     @property
     def model_version(self) -> int:
@@ -401,6 +445,12 @@ class OnnxGraph(nx.DiGraph):
         """Make new model"""
         graph = deepcopy(self._model.graph)
         graph.ClearField("node")
+        if self._keep_value_info:
+            # remove duplicated values, later value_info will overwrite earlier ones
+            values_map = {
+                i.name: i for i in chain(self._value_info, self._value_info_update)
+            }
+            self._value_info_update = list(values_map.values())
         graph.ClearField("value_info")
         for n in nx.topological_sort(self):
             graph.node.append(self.nodes[n]["pb"])
@@ -428,7 +478,17 @@ class OnnxGraph(nx.DiGraph):
         check: bool = True,
     ):
         """Serialize the graph to onnx model and save to model_path."""
-        model = self.model
+        if infer_shapes:
+            # infer shape using infer_shape pass
+            # pylint: disable=import-outside-toplevel
+            from .passes.convert.infer_shape import infer_shape
+
+            graph_with_shape = infer_shape(self)
+            # pylint: disable=protected-access
+            graph_with_shape._keep_value_info = True
+            model = graph_with_shape.model
+        else:
+            model = self.model
         if not isinstance(model_path, (str, os.PathLike)):
             format = "protobuf"
         elif format == "protobuf" or format is None:
@@ -439,8 +499,6 @@ class OnnxGraph(nx.DiGraph):
             model_path = Path(model_path).with_suffix(".json")
         elif format == "onnxtxt":
             model_path = Path(model_path).with_suffix(".onnxtxt")
-        if infer_shapes:
-            model = onnx.shape_inference.infer_shapes(model, data_prop=True)
         if check:
             onnx.checker.check_model(model, full_check=True)
         onnx.save_model(model, model_path, format=format)

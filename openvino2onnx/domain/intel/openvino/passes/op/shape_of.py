@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -9,6 +9,7 @@ from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto, TensorProto
 
 from openvino2onnx.graph import OnnxGraph
+from openvino2onnx.passes.utils import cast_in
 
 from . import OP_CONVERT, BaseNodeConversion
 
@@ -24,15 +25,7 @@ class ShapeOf(BaseNodeConversion):
         if out_dtype := self.get_attribute(ori_node, "output_type"):
             if out_dtype == "i32":
                 # add a cast
-                cast_node = make_node(
-                    "Cast",
-                    inputs=[f"{ori_node.name}/Cast_input0"],
-                    outputs=[ori_node.output[0]],
-                    to=TensorProto.INT32,
-                    name=f"{ori_node.name}/Cast",
-                )
-                ori_node.output[0] = cast_node.input[0]
-                self += cast_node
+                self += cast_in(ori_node, 0, TensorProto.INT32)
         return make_node(
             "Shape", inputs=ori_node.input, outputs=ori_node.output, name=ori_node.name
         )

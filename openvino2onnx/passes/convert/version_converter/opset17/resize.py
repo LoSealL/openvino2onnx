@@ -44,16 +44,16 @@ class Resize(Rewriter):
             input_rank = len(input_shape)
             axes = [i if i >= 0 else i + input_rank for i in ori_axes]  # type: ignore
             missing_axes = set(range(input_rank)) - set(axes)
-            scales = self.get_input_node_or_die(node, 2)
-            scales_value = self.get_value_or_die(scales)
-            dtype = scales_value.dtype
-            scales_value = {axis: scales_value[i] for i, axis in enumerate(axes)}
+            scales_node = self.get_input_node_or_die(node, 2)
+            scales = self.get_value_or_die(scales_node)
+            dtype = scales.dtype
+            scales_value = {axis: scales[i] for i, axis in enumerate(axes)}
             scales_value.update({axis: 1.0 for axis in missing_axes})
             scales_value = [scales_value[axis] for axis in sorted(scales_value)]
-            scales_value = np.array(scales_value, dtype=dtype)
-            new_scales = make_constant(scales.name + "/new", scales_value)
+            scales = np.array(scales_value, dtype=dtype)
+            new_scales = make_constant(scales_node.name + "/new", scales)
             node.input[2] = new_scales.output[0]
-            self -= scales
+            self -= scales_node
             self += new_scales
             keep_aspect_ratio_policy = self.get_attribute(
                 node, "keep_aspect_ratio_policy"
@@ -61,7 +61,7 @@ class Resize(Rewriter):
             if keep_aspect_ratio_policy in ("not_larger", "not_smaller"):
                 # rescale should use the original axes to specify the min/max range of
                 # scales value.
-                self._rescale(node, keep_aspect_ratio_policy, axes, scales_value)
+                self._rescale(node, keep_aspect_ratio_policy, axes, scales)
         self.remove_attribute(node, "axes")
         self.remove_attribute(node, "keep_aspect_ratio_policy")
 

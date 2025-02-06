@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -17,7 +17,7 @@ from openvino2onnx.passes.pattern import GraphPattern, SingleNodePattern
 from openvino2onnx.passes.rewriter import Rewriter
 
 
-@PASSES.register(name="merge_quantize_input")
+@PASSES.register(name="merge_quantize_input", deps=["infer_shape"])
 class MergeQuantizeInputPass(Rewriter):
     """Merge QuantizeLinear into inputs and change input type to uint8.
 

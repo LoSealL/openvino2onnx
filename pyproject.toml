@@ -38,30 +38,39 @@ openvino2onnx = "openvino2onnx.__main__:main"
 include = ["openvino2onnx"]
 exclude = ["openvino2onnx/domain/pytorch", "tests", "tests_omz_fuzzy"]
 
-
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = ["-q", "-s"]
 
 [tool.flake8]
-ignore = ['E231', 'E241']
+ignore = ['E203', 'E231', 'E241']
 per-file-ignores = ['__init__.py:F401']
+exclude = []
 max-line-length = 88
 max-complexity = 20
 count = true
 
 [tool.isort]
 profile = "black"
+skip_glob = []
 
 [tool.pylint."MAIN"]
 ignore-paths = []
 
 [tool.pylint."MESSAGES CONTROL"]
 disable = [
+    "logging-fstring-interpolation",
     "missing-module-docstring",
     "no-member",
     "no-name-in-module",
     "fixme",
     "R",
     "I",
+]
+
+[tool.mypy]
+disable_error_code = ["assignment", "import-untyped", "return-value", "return"]
+exclude = [
+    '^openvino2onnx/domain/pytorch/.*\.py$',
+    '^tests.*\.py$',
 ]

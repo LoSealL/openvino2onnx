@@ -11,6 +11,7 @@ from onnx.onnx_pb import NodeProto
 from openvino2onnx import OPENVINO2ONNX_OPSET
 from openvino2onnx.graph import OnnxGraph
 from openvino2onnx.passes.rewriter import Rewriter
+from openvino2onnx.passes.utils import cast_in
 
 from . import OP_CONVERT, BaseNodeConversion
 
@@ -26,15 +27,7 @@ class PReLU(BaseNodeConversion):
         input_type = graph.tensor_type(ori_node.input[0])
         slope_type = graph.tensor_type(ori_node.input[1])
         if input_type != slope_type:
-            cast = make_node(
-                "Cast",
-                inputs=[ori_node.input[1]],
-                outputs=[f"{ori_node.input[1]}_cast"],
-                name=f"{ori_node.name}/Cast",
-                to=input_type,
-            )
-            ori_node.input[1] = cast.output[0]
-            self += cast
+            self += cast_in(ori_node, 1, input_type)
         return make_node(
             "PRelu", inputs=ori_node.input, outputs=ori_node.output, name=ori_node.name
         )

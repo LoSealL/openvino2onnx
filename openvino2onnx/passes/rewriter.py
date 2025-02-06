@@ -5,26 +5,21 @@ Copyright Wenyi Tang 2024-2025
 :Email: wenyitang@outlook.com
 """
 
-import tempfile
 from abc import ABCMeta, abstractmethod
-from copy import deepcopy
 from enum import Enum
-from pathlib import Path
 from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Set
 from uuid import uuid4
 
-import networkx as nx
 import numpy as np
 import onnx
 from onnx import numpy_helper
 from onnx.helper import make_attribute
 
-from openvino2onnx.evaluator import Evaluator
 from openvino2onnx.graph import OnnxGraph
 
-from .logger import debug, error
+from .logger import error
 from .pattern import Pattern
-from .utils import attribute_value, canonical_node_name
+from .utils import attribute_value, evaluate_on_node
 
 
 class RewriterRepeat(Enum):
@@ -45,6 +40,8 @@ class Rewriter(metaclass=ABCMeta):
         repeat (RewriterRepeat): repeat mode of the rewriter. Default is ONCE.
     """
 
+    __name__: str = "Rewriter"
+
     def __init__(self, pattern: Pattern, repeat=RewriterRepeat.ONCE):
         assert isinstance(pattern, Pattern)
         self.pattern = pattern
@@ -53,6 +50,8 @@ class Rewriter(metaclass=ABCMeta):
         self.node_to_add: Set[onnx.NodeProto] = set()
         self.node_to_remove: Set[onnx.NodeProto] = set()
         self.post_hooks: Dict[int, Callable[[OnnxGraph], OnnxGraph]] = {}
+        # record how many patterns have been matched and rewritten
+        self.num_rewrites = 0
 
     @abstractmethod
     def rewrite(self, graph: OnnxGraph, nodes: List[onnx.NodeProto], *args, **kwargs):
@@ -105,6 +104,7 @@ class Rewriter(metaclass=ABCMeta):
             OnnxGraph: rewritten graph
         """
         repeat = self.repeat
+        self.num_rewrites = 0
         while repeat > 0:
             matched_nodes = self.pattern.match(graph)
             if matched_nodes is None:
@@ -130,6 +130,8 @@ class Rewriter(metaclass=ABCMeta):
                         nodes_name = ",".join(n.name for n in nodes)
                         error(f"Rewrite nodes [{nodes_name}] failed.")
                         raise
+                    finally:
+                        self.num_rewrites += 1
             if i is None:
                 return graph  # no match found
             for node in self.node_to_add:
@@ -193,16 +195,18 @@ class Rewriter(metaclass=ABCMeta):
             port = i_or_s
         return [s for s in graph.onnx_successors(node) if port in s.input]
 
-    def get_attribute(self, node: onnx.NodeProto, name: str):
+    def get_attribute(self, node: onnx.NodeProto, name: str, default=None):
         """Try to get the value of an attribute of the node.
 
         Args:
             node: a node
             name: name of the attribute
+            default: set a default value if attribute is optional and not found
         """
         for attr in node.attribute:
             if attr.name == name:
                 return attribute_value(attr)
+        return default
 
     def set_attribute(self, node: onnx.NodeProto, name: str, value: Any):
         """Set a new value to an attribute of the node."""
@@ -249,7 +253,9 @@ class Rewriter(metaclass=ABCMeta):
                 node.attribute.remove(attr)
                 break
 
-    def get_value(self, node: onnx.NodeProto | str, output_name: Optional[str] = None):
+    def get_value(
+        self, node: onnx.NodeProto | str, output_name: Optional[str] = None
+    ) -> Optional[np.ndarray]:
         """Get value from a constant node."""
         if isinstance(node, str):
             for init in self.graph.initializer:
@@ -262,38 +268,26 @@ class Rewriter(metaclass=ABCMeta):
                 return
             return self.get_value(self.graph.nodes[cst_node_name]["pb"], node)
         elif node.op_type == "Constant":
-            return numpy_helper.to_array(node.attribute[0].t)
+            attr = node.attribute[0]
+            if attr.name == "value":
+                return numpy_helper.to_array(attr.t)
+            if attr.name == "value_float":
+                return np.array(attr.f, dtype=np.float32)
+            if attr.name == "value_floats":
+                return np.array(attr.floats, dtype=np.float32)
+            if attr.name == "value_int":
+                return np.array(attr.i, dtype=np.int64)
+            if attr.name == "value_ints":
+                return np.array(attr.ints, dtype=np.int64)
+            if attr.name == "value_string":
+                return np.array(attr.s)
+            if attr.name == "value_strings":
+                return np.array(attr.strings)
+            raise TypeError(f"Unknown attribute type of Constant: {attr.name}")
         elif node.op_type == "Shape":
             return np.asarray(self.graph.tensor_shape(node.input[0]))
         # try to fold all upstreaming nodes
-        all_preds = nx.traversal.dfs_predecessors(self.graph.reverse(), node.name)
-        all_preds = set(all_preds)
-        all_preds.add(node.name)  # include self
-        h = deepcopy(self.graph.onnx_subgraph(all_preds))
-        try:
-            # pylint: disable=import-outside-toplevel
-            from openvino2onnx import convert_graph
-
-            sub_model = h.model
-            # extend current value_info due to ``h.model`` cleared it.
-            # it's needed because shape inference can not work for custom domains.
-            # pylint: disable=protected-access
-            sub_model.graph.value_info.extend(h._value_info)
-            sub_model = convert_graph(sub_model, [], print_passes=False).model
-        except Exception:  # pylint: disable=broad-except
-            debug(f"convert subgraph failed on {node.name}: [{all_preds}]")
-            return
-        try:
-            if output_name is None:
-                output_name = sub_model.graph.output[0].name
-            runner = Evaluator(sub_model)
-            return runner([output_name], {})[0]
-        except Exception:  # pylint: disable=broad-except
-            node_name = canonical_node_name(node.name)
-            temp_save = Path(tempfile.gettempdir()) / f"{node_name}.onnx"
-            onnx.save_model(sub_model, temp_save)
-            debug(f"evaluate subgraph failed on {node.name}: {temp_save}")
-            return
+        return evaluate_on_node(self.graph, node, output_name)
 
     def get_value_or_die(
         self, node: onnx.NodeProto | str, output_name: Optional[str] = None

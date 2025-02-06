@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2025
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -11,6 +11,7 @@ from onnx.onnx_pb import NodeProto, TensorProto
 
 from openvino2onnx.domain.intel.openvino.ir.mapping import ETYPE2DTYPE
 from openvino2onnx.graph import OnnxGraph
+from openvino2onnx.passes.utils import cast_in
 
 from . import OP_CONVERT, BaseNodeConversion
 
@@ -34,37 +35,13 @@ class Range(BaseNodeConversion):
             output_dtype = TensorProto.INT64
         dtype0 = graph.tensor_type(ori_node.input[0])
         if dtype0 != output_dtype:
-            cast_start = make_node(
-                "Cast",
-                inputs=[ori_node.input[0]],
-                outputs=[f"{ori_node.name}/Cast/start_output0"],
-                to=output_dtype,
-                name=f"{ori_node.name}/Cast/start",
-            )
-            self += cast_start
-            ori_node.input[0] = cast_start.output[0]
+            self += cast_in(ori_node, 0, output_dtype)
         dtype1 = graph.tensor_type(ori_node.input[1])
         if dtype1 != output_dtype:
-            cast_limit = make_node(
-                "Cast",
-                inputs=[ori_node.input[1]],
-                outputs=[f"{ori_node.name}/Cast/limit_output0"],
-                to=output_dtype,
-                name=f"{ori_node.name}/Cast/limit",
-            )
-            self += cast_limit
-            ori_node.input[1] = cast_limit.output[0]
+            self += cast_in(ori_node, 1, output_dtype)
         dtype2 = graph.tensor_type(ori_node.input[2])
         if dtype2 != output_dtype:
-            cast_delta = make_node(
-                "Cast",
-                inputs=[ori_node.input[2]],
-                outputs=[f"{ori_node.name}/Cast/delta_output0"],
-                to=output_dtype,
-                name=f"{ori_node.name}/Cast/delta",
-            )
-            self += cast_delta
-            ori_node.input[2] = cast_delta.output[0]
+            self += cast_in(ori_node, 2, output_dtype)
         return make_node(
             "Range",
             inputs=ori_node.input,

@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -45,10 +45,8 @@ class SplitToSliceRewriter(Rewriter):
                 split = [(shape - remind) // (num_outputs - 1)] * (num_outputs - 1)
                 split.append(remind)
         else:
-            split = self.get_input_node(node, 1)
-            assert split is not None
-            split = self.get_value(split)
-            assert split is not None, "split input should be constant"
+            split_node = self.get_input_node_or_die(node, 1)
+            split = self.get_value_or_die(split_node).tolist()
         starts = 0
         for i, (ch, _) in enumerate(zip(split, node.output)):
             starts_node = make_constant(

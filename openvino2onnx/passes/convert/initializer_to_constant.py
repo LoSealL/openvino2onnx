@@ -1,5 +1,5 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
@@ -88,5 +88,9 @@ def initializer_unique(graph: OnnxGraph) -> OnnxGraph:
                 new_init = from_array(to_array(init_name_map[name]["init"]), new_name)
                 init_add.append(new_init)
 
+    # should remove duplicated items in initializer
+    graph._model.graph.ClearField("initializer")  # pylint: disable=W0212
     graph.initializer.extend(init_add)
+    for v in init_name_map.values():
+        graph.initializer.append(v["init"])
     return graph

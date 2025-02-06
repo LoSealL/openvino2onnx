@@ -172,6 +172,18 @@ class Registry:
         return tabulate(members, title, "simple_grid", maxcolwidths=[None, 50, 50, 50])
 
 
+def get_pass_manager(
+    include: Optional[Sequence[str]] = None,
+    exclude: Optional[Sequence[str]] = None,
+    configs: Optional[Dict[str, Dict[str, str | int | float | bool]]] = None,
+):
+    """Lazy load pass manager"""
+    # pylint: disable=import-outside-toplevel
+    from openvino2onnx.pass_manager import PassManager
+
+    return PassManager(include, exclude, configs)
+
+
 PASSES = Registry("PASS")
 L1 = Registry("L1", parent=PASSES)
 L2 = Registry("L2", parent=PASSES)

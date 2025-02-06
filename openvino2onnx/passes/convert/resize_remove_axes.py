@@ -36,17 +36,17 @@ class ResizeRemoveAxesRewriter(Rewriter):
         if axes := self.get_attribute(node, "axes"):  # type: ignore
             input_shape = graph.tensor_shape(node.input[0])
             input_rank = len(input_shape)
-            axes: List[int] = [i if i >= 0 else i + input_rank for i in axes]
+            axes = [i if i >= 0 else i + input_rank for i in axes]  # type: ignore
             missing_axes = set(range(input_rank)) - set(axes)
-            scales = self.get_input_node_or_die(node, 2)
-            scales_value = self.get_value_or_die(scales)
-            dtype = scales_value.dtype
-            scales_value = {axis: scales_value[i] for i, axis in enumerate(axes)}
+            scales_node = self.get_input_node_or_die(node, 2)
+            scales = self.get_value_or_die(scales_node)
+            dtype = scales.dtype
+            scales_value = {axis: scales[i] for i, axis in enumerate(axes)}
             scales_value.update({axis: 1.0 for axis in missing_axes})
             scales_value = [scales_value[axis] for axis in sorted(scales_value)]
-            scales_value = np.array(scales_value, dtype=dtype)
-            new_scales = make_constant(scales.name + "/new", scales_value)
+            scales = np.array(scales_value, dtype=dtype)
+            new_scales = make_constant(scales_node.name + "/new", scales)
             self.set_attribute(node, "axes", list(range(input_rank)))
             node.input[2] = new_scales.output[0]
-            self -= scales
+            self -= scales_node
             self += new_scales

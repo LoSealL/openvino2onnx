@@ -11,6 +11,7 @@ from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto
 
 from openvino2onnx.graph import OnnxGraph
+from openvino2onnx.passes.utils import cast_in
 
 from . import OP_CONVERT, BaseNodeConversion
 
@@ -30,15 +31,7 @@ class Unsqueeze(BaseNodeConversion):
             ori_node.input.pop(1)
         elif axes_type != onnx.TensorProto.INT64:
             # add a cast
-            cast = make_node(
-                "Cast",
-                inputs=[ori_node.input[1]],
-                outputs=[ori_node.input[1] + "_int64"],
-                name=f"{ori_node.name}/Cast",
-                to=onnx.TensorProto.INT64,
-            )
-            ori_node.input[1] = ori_node.input[1] + "_int64"
-            self += cast
+            self += cast_in(ori_node, 1, onnx.TensorProto.INT64)
         return make_node(
             ori_node.op_type,
             inputs=ori_node.input,

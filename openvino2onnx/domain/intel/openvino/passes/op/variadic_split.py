@@ -10,6 +10,7 @@ from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto
 
 from openvino2onnx.graph import OnnxGraph
+from openvino2onnx.passes.utils import cast_in
 
 from . import OP_CONVERT, BaseNodeConversion
 
@@ -26,15 +27,7 @@ class VariadicSplit(BaseNodeConversion):
         ori_node.input.pop(1)
         dtype = graph.tensor_type(ori_node.input[-1])
         if dtype != onnx.TensorProto.INT64:
-            cast = make_node(
-                "Cast",
-                inputs=[ori_node.input[-1]],
-                outputs=[f"{ori_node.input[-1]}/Cast"],
-                name=f"{ori_node.name}/Cast",
-                to=onnx.TensorProto.INT64,
-            )
-            ori_node.input[-1] = cast.output[0]
-            self += cast
+            self += cast_in(ori_node, -1, onnx.TensorProto.INT64)
         return make_node(
             "Split",
             inputs=ori_node.input,

@@ -5,7 +5,7 @@ Copyright Wenyi Tang 2024-2025
 :Email: wenyitang@outlook.com
 """
 
-from typing import List
+from typing import Collection, List
 
 import numpy as np
 import onnx
@@ -47,7 +47,7 @@ class FuseQConvRewriter(Rewriter):
         qconv.add_edge(conv, SingleNodePattern("QuantizeLinear"))
         super().__init__(qconv)
 
-    def _unpack_nodes(self, nodes):
+    def _unpack_nodes(self, nodes: Collection[NodeProto]):
         nodes = set(nodes)
         conv = next(filter(lambda n: n.op_type == "Conv", nodes))
         qinput = self.get_input_node(conv, 0)
@@ -162,9 +162,7 @@ class UnfuseQConvRewriter(Rewriter):
             raise RuntimeError(f"x_scale value from {qconv.name} is not constant")
         if w_scale_value is None:
             raise RuntimeError(f"w_scale value from {qconv.name} is not constant")
-        bias_value = self.get_value(qconv.input[8])
-        if bias_value is None:
-            raise RuntimeError(f"bias value from {qconv.name} is not constant")
+        bias_value = self.get_value_or_die(qconv.input[8])
         bias_value = bias_value.astype(np.float32) * (x_scale_value * w_scale_value)
         graph.initializer.append(
             onnx.numpy_helper.from_array(bias_value, qconv.name + "/dq_bias")
