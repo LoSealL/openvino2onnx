@@ -1,8 +1,8 @@
 """
-Copyright Wenyi Tang 2024
+Copyright Intel 2024
 
 :Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+:Email: wenyi.tang@intel.com
 
 Choose a proper backend to evaluate ONNX models.
 1. ReferenceEvaluator: no extra dependency, but extremely slow.
@@ -12,9 +12,11 @@ Choose a proper backend to evaluate ONNX models.
 
 # pylint: disable=import-outside-toplevel
 
+import os
+import warnings
 from contextlib import suppress
 from tempfile import TemporaryDirectory
-from typing import Callable, Dict, List, Literal, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Literal, Sequence, Tuple
 
 import numpy as np
 import onnx
@@ -44,9 +46,9 @@ def _get_eval_onnx(model):
 
     model = ReferenceEvaluator(model)
 
-    def _run_code(output_names, inputs_feed) -> List[np.ndarray]:
+    def _run_code(output_names, inputs_feed):
         results = model.run(output_names, inputs_feed)
-        return [np.asarray(i) for i in results]
+        return [np.array(i) for i in results]
 
     return _run_code, inputs, outputs
 
@@ -59,8 +61,10 @@ def _get_eval_onnxruntime(model):
     else:
         sess = onnxruntime.InferenceSession(model)
 
-    def _run_code(output_names, inputs_feed):
-        return sess.run(output_names, inputs_feed)
+    def _run_code(
+        output_names: Sequence[str], inputs_feed: Dict[str, np.ndarray]
+    ) -> List[Any]:
+        return list(sess.run(output_names, inputs_feed))
 
     def _data_mapping():
         mapping = {}
@@ -110,7 +114,7 @@ def _get_eval_openvino(model):
     def _run_code(output_names, inputs_feed):
         input_names = {i.name for i in network.get_parameters()}
         if missing_names := input_names.difference(inputs_feed.keys()):
-            raise KeyError(f"Missing inputs: {missing_names}")
+            warnings.warn(f"Missing inputs: {missing_names}")
         outputs = model(inputs_feed)
         if output_names:
             return [outputs[name] for name in output_names]
@@ -138,8 +142,9 @@ def _get_eval_openvino(model):
     return _run_code, inputs, outputs
 
 
+# pyright: ignore[reportReturnType]
 def _get_eval_backend(
-    backend: str, model: str | onnx.ModelProto
+    backend: str, model: str | os.PathLike | onnx.ModelProto
 ) -> Tuple[
     Callable[[Sequence[str], Dict[str, np.ndarray]], List[np.ndarray]], Dict, Dict
 ]:
@@ -158,7 +163,7 @@ class Evaluator:
 
     def __init__(
         self,
-        model: str | onnx.ModelProto,
+        model: str | os.PathLike | onnx.ModelProto,
         backend: Literal["auto", "openvino", "onnxruntime", "onnx"] = "auto",
     ):
         if backend.lower() == "auto":
@@ -181,6 +186,19 @@ class Evaluator:
         self.outputs = outputs
 
     def __call__(
-        self, output_names: Sequence[str], feed_inputs: Dict[str, np.ndarray]
+        self,
+        output_names: Sequence[str],
+        feed_inputs: Dict[str, np.ndarray] | None = None,
+        **kw_feeds: np.ndarray,
     ) -> List[np.ndarray]:
-        return self._call_fn(output_names, feed_inputs)
+        if feed_inputs is None and not kw_feeds:
+            raise ValueError(
+                "Either feed_inputs or **kw_feeds should be provided."
+                " But both are None."
+            )
+        model_inputs: Dict[str, np.ndarray] = {}
+        if feed_inputs:
+            model_inputs.update(feed_inputs)
+        if kw_feeds:
+            model_inputs.update(kw_feeds)
+        return self._call_fn(output_names, model_inputs)

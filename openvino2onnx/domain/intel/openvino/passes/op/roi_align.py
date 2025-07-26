@@ -1,15 +1,23 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2024 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto
 
-from openvino2onnx.graph import OnnxGraph
-
+from .. import OnnxGraph
 from . import OP_CONVERT, BaseNodeConversion
 
 
@@ -35,10 +43,11 @@ class ROIAlign(BaseNodeConversion):
         spatial_scale = self.get_attribute(ori_node, "spatial_scale")
         assert isinstance(spatial_scale, (int, float, str))
         mode = self.get_attribute(ori_node, "mode")
-        aligned_mode = self.get_attribute(ori_node, "aligned_mode") or "asymmetric"
+        aligned_mode = self.get_attribute(ori_node, "aligned_mode", "asymmetric")
+        assert isinstance(aligned_mode, str)
         if aligned_mode not in self._aligned_mode_map:
             raise ValueError(
-                "aligned_mode=half_pixel is not supported."
+                f"aligned_mode={aligned_mode} is not supported."
                 f" Accepted mode are {self._aligned_mode_map.keys()}"
             )
         return make_node(

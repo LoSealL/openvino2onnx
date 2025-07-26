@@ -1,8 +1,9 @@
 """
-Copyright Wenyi Tang 2024
+Copyright 2024 Intel Corporation
 
 :Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+:Email: wenyi.tang@intel.com
+
 """
 
 # pylint: disable=arguments-differ
@@ -13,10 +14,10 @@ from typing import List
 from onnx.helper import make_function, make_node, make_operatorsetid
 from onnx.onnx_pb import NodeProto
 
-from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes import PASSES
-from openvino2onnx.passes.pattern import GraphPattern, SingleNodePattern
-from openvino2onnx.passes.rewriter import Rewriter
+from ... import OnnxGraph
+from .. import PASSES
+from ..pattern import GraphPattern, SingleNodePattern
+from ..rewriter import Rewriter
 
 
 @PASSES.register("fuse_swish")

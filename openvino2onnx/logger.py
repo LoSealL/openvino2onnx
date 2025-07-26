@@ -1,8 +1,9 @@
 """
-Copyright Wenyi Tang 2024
+Copyright 2024 Intel Corporation
 
 :Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+:Email: wenyi.tang@intel.com
+
 """
 
 import logging
@@ -117,9 +118,15 @@ try:
 
     _HDL.setFormatter(
         colorlog.ColoredFormatter(
-            "[%(asctime)s]%(log_color)s[%(levelname)s] %(message)s"
+            "[%(asctime)s]%(log_color)s[%(name)s][%(levelname)s] %(message)s"
         )
     )
 except ImportError:
-    _HDL.setFormatter(Formatter("[%(asctime)s][%(levelname)s] %(message)s"))
+    _HDL.setFormatter(Formatter("[%(asctime)s][%(name)s][%(levelname)s] %(message)s"))
 _LOG.addHandler(_HDL)
+
+if os.environ.get("OPENVINO2ONNX_LOG_FILE"):
+    _FDL = logging.FileHandler(os.environ["OPENVINO2ONNX_LOG_FILE"], encoding="utf-8")
+    _FDL.setFormatter(Formatter("[%(asctime)s][%(name)s][%(levelname)s] %(message)s"))
+    _FDL.setLevel(_default_level_from_env())
+    _LOG.addHandler(_FDL)

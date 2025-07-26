@@ -1,23 +1,32 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2024-2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from abc import ABCMeta, abstractmethod
+from collections.abc import Generator, Sequence, Sized
 from enum import Enum
-from typing import Any, Callable, Dict, Generator, List, Optional, Sequence, Set
+from typing import Any, Callable, Dict, List, Optional, Set
 from uuid import uuid4
 
 import numpy as np
 import onnx
-from onnx import numpy_helper
-from onnx.helper import make_attribute
+from onnx import FunctionProto, numpy_helper
+from onnx.helper import make_attribute, make_function, make_operatorsetid
 
-from openvino2onnx.graph import OnnxGraph
-
-from .logger import error
+from ..graph import OnnxGraph
+from ..logger import error
 from .pattern import Pattern
 from .utils import attribute_value, evaluate_on_node
 
@@ -32,7 +41,18 @@ class RewriterRepeat(Enum):
     INFINITE = 9999  # maximum repeat times
 
 
-class Rewriter(metaclass=ABCMeta):
+class MetaRewriter(ABCMeta):
+    """Override the attribute of new rewriter class."""
+
+    def __new__(mcs, name, bases, namespace, /, **kwargs):
+        cls = super().__new__(mcs, name, bases, namespace, **kwargs)
+        setattr(cls, "__NAME__", name)
+        setattr(cls, "__DEPS__", [])
+        setattr(cls, "__PATCHES__", [])
+        return cls
+
+
+class Rewriter(metaclass=MetaRewriter):
     """OnnxGraph rewriter to modify the graph.
 
     Args:
@@ -40,7 +60,9 @@ class Rewriter(metaclass=ABCMeta):
         repeat (RewriterRepeat): repeat mode of the rewriter. Default is ONCE.
     """
 
-    __name__: str = "Rewriter"
+    __NAME__: str = "Rewriter"
+    __DEPS__: List[str] = []
+    __PATCHES__: List[str] = []
 
     def __init__(self, pattern: Pattern, repeat=RewriterRepeat.ONCE):
         assert isinstance(pattern, Pattern)
@@ -49,6 +71,7 @@ class Rewriter(metaclass=ABCMeta):
         self.repeat = min(int(repeat_value), RewriterRepeat.INFINITE.value)
         self.node_to_add: Set[onnx.NodeProto] = set()
         self.node_to_remove: Set[onnx.NodeProto] = set()
+        self.pre_hooks: Dict[int, Callable[[OnnxGraph], OnnxGraph]] = {}
         self.post_hooks: Dict[int, Callable[[OnnxGraph], OnnxGraph]] = {}
         # record how many patterns have been matched and rewritten
         self.num_rewrites = 0
@@ -105,6 +128,8 @@ class Rewriter(metaclass=ABCMeta):
         """
         repeat = self.repeat
         self.num_rewrites = 0
+        for hook_fn in self.pre_hooks.values():
+            graph = hook_fn(graph)
         while repeat > 0:
             matched_nodes = self.pattern.match(graph)
             if matched_nodes is None:
@@ -123,7 +148,11 @@ class Rewriter(metaclass=ABCMeta):
                 if self.node_to_remove:
                     # filter nodes that been removed in previous pass
                     nodes = list(filter(lambda n: n not in self.node_to_remove, nodes))
-                if nodes:
+                rewriter_can_run = len(nodes) != 0
+                if isinstance(self.pattern, Sized):
+                    # shared match been modified by previous rewriter
+                    rewriter_can_run = len(nodes) == len(self.pattern)
+                if rewriter_can_run:
                     try:
                         self.rewrite(graph, nodes, *args, **kwargs)
                     except Exception:
@@ -133,7 +162,7 @@ class Rewriter(metaclass=ABCMeta):
                     finally:
                         self.num_rewrites += 1
             if i is None:
-                return graph  # no match found
+                break  # no match found
             for node in self.node_to_add:
                 graph.add_onnx_node(node)
             added_node_names = set([n.name for n in self.node_to_add])
@@ -299,6 +328,25 @@ class Rewriter(metaclass=ABCMeta):
             raise ValueError(f"Failed to evaluate value for {node_name}({output_name})")
         return value
 
+    def make_function_from_graph(
+        self, graph: OnnxGraph, domain: str, type_name: str
+    ) -> FunctionProto:
+        """Make onnx local function from a subgraph."""
+        h = graph.model.graph
+        function = make_function(
+            domain=domain,
+            fname=type_name,
+            inputs=list(graph.inputs),
+            outputs=list(graph.outputs),
+            nodes=h.node,
+            opset_imports=[
+                make_operatorsetid(domain, 1),
+                make_operatorsetid("", graph.opset_version),
+            ],
+            value_info=h.value_info,
+        )
+        return function
+
     def register_post_hook(self, hook: Callable[[OnnxGraph], OnnxGraph]) -> int:
         """Register a post-rewrite hook function.
 
@@ -324,6 +372,32 @@ class Rewriter(metaclass=ABCMeta):
             uid: a unique id of the hook function to be removed
         """
         self.post_hooks.pop(uid)
+
+    def register_pre_hook(self, hook: Callable[[OnnxGraph], OnnxGraph]) -> int:
+        """Register a pre-rewrite hook function.
+
+        A hook function must be a callable that takes an OnnxGraph as input and returns
+        an OnnxGraph as output. It will be called before each run of rewrite.
+
+        Args:
+            hook: a hook function to be registered
+
+        Returns:
+            int: a unique id of the hook function
+        """
+        if not callable(hook):
+            raise TypeError(f"Expect a callable, but got {type(hook)}")
+        uid = uuid4().int
+        self.pre_hooks[uid] = hook
+        return uid
+
+    def remove_pre_hook(self, uid: int):
+        """Remove a pre-rewrite hook function.
+
+        Args:
+            uid: a unique id of the hook function to be removed
+        """
+        self.pre_hooks.pop(uid)
 
     @property
     def graph(self) -> OnnxGraph:

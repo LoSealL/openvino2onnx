@@ -1,8 +1,17 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2024 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from typing import List
@@ -11,11 +20,11 @@ import numpy as np
 from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto
 
-from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes import PASSES, logger
-from openvino2onnx.passes.pattern import GraphPattern, SingleNodePattern
-from openvino2onnx.passes.rewriter import Rewriter
-from openvino2onnx.passes.utils import make_constant
+from ... import OnnxGraph, logger
+from .. import PASSES
+from ..pattern import GraphPattern, SingleNodePattern
+from ..rewriter import Rewriter
+from ..utils import make_constant
 
 
 @PASSES.register("conv_dequantize_weight")
@@ -186,6 +195,9 @@ class RecalculateDequantizeWeightRewriter(Rewriter):
         qweight += zero_point[..., None]
         qweight = np.clip(qweight, -128, 127).astype(np.int8)
         qweight = qweight.reshape(shape)
+        # This is used for NPU...
+        # It will get different zero points in a array if not
+        # https://jira.devtools.intel.com/browse/AISW-174
         qweight[scale == 0, None] = 0
         scale[scale == 0] = 1
         return qweight, scale.astype(weight.dtype), zero_point

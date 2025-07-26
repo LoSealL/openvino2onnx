@@ -1,17 +1,18 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright 2025 Intel Corporation
 
 :Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+:Email: wenyi.tang@intel.com
+
 """
 
 from importlib import import_module
 from pathlib import Path
 from typing import Optional, Set, Tuple
 
-from .logger import warning
+from ..logger import warning
 
-TOP = Path(__file__).parent.parent.parent
+TOP = Path(__file__).parent.parent.parent.resolve()
 
 
 def auto_load(cwd: str | Path, filters: Optional[Set[str]] = None, top: Path = TOP):

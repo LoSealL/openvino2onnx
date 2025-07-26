@@ -1,9 +1,17 @@
 """
-Copyright Wenyi Tang 2024
+Copyright (C) 2024 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 # pylint: disable=missing-function-docstring
@@ -13,7 +21,8 @@ import json
 from pathlib import Path
 
 from . import OPENVINO2ONNX_OPSET, PassManager, convert_graph
-from .passes.logger import set_level
+from .checker import check_accuracy
+from .logger import set_level
 
 USAGE = "openvino2onnx input_model.onnx [output_model.onnx]"
 
@@ -28,13 +37,19 @@ def parse_args():
         "-a",
         "--activate",
         nargs="*",
-        help="select passes to be activated, activate all passes if not set.",
+        help="select passes to be activated, activate L1, L2 and L3 passes if not set.",
     )
     parser.add_argument(
         "-r",
         "--remove",
         nargs="*",
         help="specify passes to be removed from activated passes.",
+    )
+    parser.add_argument(
+        "-n",
+        "--no-passes",
+        action="store_true",
+        help="do not run any optimizing passes, just convert the model",
     )
     parser.add_argument(
         "--print",
@@ -64,6 +79,17 @@ def parse_args():
         "--uncheck",
         action="store_false",
         help="no checking output model",
+    )
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="check optimized model with random inputs",
+    )
+    parser.add_argument(
+        "--checker-backend",
+        choices=("onnx", "openvino", "onnxruntime"),
+        default="onnxruntime",
+        help="backend for accuracy checking, defaults to openvino",
     )
     parser.add_argument(
         "-v",
@@ -123,19 +149,27 @@ def main():
 
     graph = convert_graph(
         model=input_model,
-        passes=args.activate,
+        passes=[] if args.no_passes else args.activate,
         exclude=args.remove,
         onnx_format=args.format,
         configs=configs,
         target_opset=args.opset_version,
     )
-    graph.save(
+    output_model = graph.save(
         output_model,
         format=args.format,
         infer_shapes=args.infer_shapes,
         check=args.uncheck,
     )
     print(f"model saved to {output_model}")
+    if args.check and isinstance(output_model, Path):
+        error_maps = check_accuracy(
+            input_model,
+            output_model,
+            backend=args.checker_backend,
+        )
+        for k, v in error_maps.items():
+            print(f"{k}: {v}")
 
 
 if __name__ == "__main__":

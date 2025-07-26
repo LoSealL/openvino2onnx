@@ -1,9 +1,17 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 # pylint: disable=arguments-differ
@@ -16,9 +24,9 @@ from onnx import TensorProto
 from onnx.helper import make_attribute
 from onnx.numpy_helper import from_array, to_array
 
-from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes import L1, PASSES, logger
-from openvino2onnx.passes.utils import cast_in
+from ... import OnnxGraph, logger
+from .. import L1, PASSES
+from ..utils import cast_in
 
 
 @L1.register()

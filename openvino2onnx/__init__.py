@@ -1,17 +1,25 @@
 """An Open Neural Network Exchange (ONNX) Optimization and Transformation Tool.
 
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
-__version__ = "1.0.4"
+__version__ = "1.1.0"
 
 import os
 from copy import deepcopy
-from typing import Literal, Optional, Sequence
+from typing import Any, Dict, Literal, Optional, Sequence
 
 import onnx
 from onnx import ModelProto
@@ -19,7 +27,7 @@ from onnx.helper import make_operatorsetid
 
 from .domain import IR_DOMAIN, detect_domain, openvino_xml_to_onnx_graph
 from .graph import OnnxGraph
-from .pass_manager import PassManager
+from .pass_manager import PassManager, print_pass_simple
 from .passes.convert.version_converter.downgrade import downgrade_op_version
 from .passes.convert.version_converter.upgrade import upgrade_op_version
 
@@ -30,7 +38,7 @@ def convert_graph(
     exclude: Optional[Sequence[str]] = None,
     onnx_format: Optional[Literal["protobuf", "textproto", "json", "onnxtxt"]] = None,
     strict: bool = False,
-    configs: Optional[dict] = None,
+    configs: Optional[Dict[str, Any]] = None,
     print_passes: bool = True,
     target_opset: Optional[int] = None,
 ) -> OnnxGraph:
@@ -50,20 +58,22 @@ def convert_graph(
     Returns:
         OnnxGraph: converted graph
     """
+    base_dir = None
     for opset in detect_domain(model):
         if opset.domain == IR_DOMAIN.domain and opset.version <= IR_DOMAIN.version:
             model = openvino_xml_to_onnx_graph(model)
     if isinstance(model, (str, os.PathLike)):
-        model = onnx.load_model(model, format=onnx_format)
+        base_dir = os.path.dirname(model)
+        model = onnx.load_model(model, format=onnx_format, load_external_data=False)
     else:
         model = deepcopy(model)
-    graph = OnnxGraph(model)
+    graph = OnnxGraph(model, base_dir=base_dir)
     if target_opset is None:
         # align models to opset v19 because all passes is designed under opset19
-        graph = upgrade_op_version(graph, op_version=19)
+        graph = upgrade_op_version(graph, op_version=OPENVINO2ONNX_OPSET.version)
     pm = PassManager(passes, exclude=exclude, configs=configs)
     if print_passes:
-        print(pm)
+        print_pass_simple(pm)
     graph = pm.optimize(graph, strict=strict)
     if target_opset is not None:
         if target_opset < graph.opset_version:
@@ -79,7 +89,7 @@ def convert(
     exclude: Optional[Sequence[str]] = None,
     onnx_format: Optional[Literal["protobuf", "textproto", "json", "onnxtxt"]] = None,
     strict: bool = False,
-    configs: Optional[dict] = None,
+    configs: Optional[Dict[str, Any]] = None,
     print_passes: bool = True,
     target_opset: Optional[int] = None,
 ) -> ModelProto:
@@ -110,7 +120,7 @@ def convert(
     return graph.model
 
 
-__all__ = ["convert", "PassManager"]
+__all__ = ["convert", "convert_graph", "PassManager", "OnnxGraph"]
 
 # make NodeProto hashable using node name
 onnx.NodeProto.__hash__ = lambda self: hash(self.name)  # type: ignore
