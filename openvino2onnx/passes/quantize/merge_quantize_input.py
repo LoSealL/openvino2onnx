@@ -1,8 +1,9 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright Wenyi Tang 2024
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
+
 """
 
 # pylint: disable=arguments-differ
@@ -11,10 +12,10 @@ from typing import List
 from onnx.helper import make_tensor_value_info
 from onnx.onnx_pb import NodeProto
 
-from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes import PASSES
-from openvino2onnx.passes.pattern import GraphPattern, SingleNodePattern
-from openvino2onnx.passes.rewriter import Rewriter
+from ... import OnnxGraph
+from .. import PASSES
+from ..pattern import GraphPattern, SingleNodePattern
+from ..rewriter import Rewriter
 
 
 @PASSES.register(name="merge_quantize_input", deps=["infer_shape"])

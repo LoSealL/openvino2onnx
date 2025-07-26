@@ -5,12 +5,25 @@ build-backend = "flit_core.buildapi"
 [project]
 name = "openvino2onnx"
 readme = "README.md"
-requires-python = ">=3.10"
-authors = [{ name = "Wenyi Tang", email = "wenyitang@outlook.com" }]
-license = { file = "LICENSE" }
-classifiers = ["License :: OSI Approved :: MIT License"]
+requires-python = ">=3.11"
+authors = [
+    { name = "Wenyi Tang", email = "wenyitang@outlook.com" },
+]
+license-files = ["LICENSE"]
+classifiers = [
+    "License :: OSI Approved :: Apache Software License",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development",
+]
 dynamic = ["version", "description"]
-dependencies = ["onnx >= 1.8.1", "networkx", "numpy", "tabulate"]
+dependencies = [
+    "onnx>=1.17.0",
+    "networkx",
+    "numpy<2.2.0",
+    "tabulate",
+    "colorlog>=6.9.0",
+    "termcolor>=3.1.0",
+]
 
 [project.urls]
 Home = "https://github.com/LoSealL/openvino2onnx"
@@ -18,21 +31,22 @@ Docs = "https://loseall.github.io/openvino2onnx"
 
 [project.optional-dependencies]
 test = [
-    "black",
-    "flake8",
-    "isort",
+    "onnxoptimizer",
+    "onnxruntime",
+    "onnxsim",
+    "openvino>=2025.0.0",
     "pre-commit",
     "pytest",
     "pytest-cov",
-    "onnxoptimizer",
-    "onnxruntime",
-    "onnxsim < 0.4.36",
-    "openvino >= 2024.1.0",
-    "openvino-dev >= 2024.1.0",
+    "pooch",
 ]
 
 [project.scripts]
 openvino2onnx = "openvino2onnx.__main__:main"
+
+[tool.setuptools]
+# Compatible with setuptools, when change build-system to setuptools.
+packages = ["openvino2onnx"]
 
 [tool.pyright]
 include = ["openvino2onnx"]
@@ -43,8 +57,8 @@ testpaths = ["tests"]
 addopts = ["-q", "-s"]
 
 [tool.flake8]
-ignore = ['E203', 'E231', 'E241']
-per-file-ignores = ['__init__.py:F401']
+ignore = ["E203", "E231", "E241"]
+per-file-ignores = ["__init__.py:F401"]
 exclude = []
 max-line-length = 88
 max-complexity = 20
@@ -60,6 +74,7 @@ ignore-paths = []
 [tool.pylint."MESSAGES CONTROL"]
 disable = [
     "logging-fstring-interpolation",
+    "import-outside-toplevel",
     "missing-module-docstring",
     "no-member",
     "no-name-in-module",
@@ -74,3 +89,23 @@ exclude = [
     '^openvino2onnx/domain/pytorch/.*\.py$',
     '^tests.*\.py$',
 ]
+
+[dependency-groups]
+dev = [
+    "mypy>=1.16.0",
+    "onnxscript>=0.3.0",
+    "pyright>=1.1.401",
+    "torch>=2.7.1",
+    "torchaudio>=2.7.1",
+    "torchvision>=0.22.1",
+]
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+torchaudio = { index = "pytorch" }
+torchvision = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true

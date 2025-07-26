@@ -9,33 +9,30 @@ repos:
     -   id: check-toml
     -   id: check-yaml
     -   id: check-added-large-files
-    -   id: requirements-txt-fixer
-    -   id: fix-encoding-pragma
-        args: ["--remove"]
 -   repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: 6.0.1
     hooks:
     -   id: isort
         args: ['--profile=black']
 -   repo: https://github.com/psf/black
-    rev: 24.10.0
+    rev: 25.1.0
     hooks:
     -   id: black
 -   repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
+    rev: v2.4.1
     hooks:
     -   id: codespell
         args: [-w, -I=.github/words_bag.txt]
         exclude: (\.(txt|diff|patch)$)
 -   repo: https://github.com/pycqa/flake8
-    rev: 7.1.1
+    rev: 7.1.2
     hooks:
     - id: flake8
       additional_dependencies: [Flake8-pyproject]
       args:
       - '--ignore=W503,E203,E231,E241'
 -   repo: https://github.com/pre-commit/mirrors-mypy
-    rev: v1.14.1
+    rev: v1.15.0
     hooks:
     -   id: mypy
         args:

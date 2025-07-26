@@ -1,8 +1,17 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2024-2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 # pylint: disable=arguments-differ
@@ -11,10 +20,10 @@ from typing import Dict, List, Optional
 from onnx import NodeProto, shape_inference
 from onnx.tools.update_model_dims import update_inputs_outputs_dims
 
-from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes import PASSES, Registry, Rewriter, get_pass_manager
-from openvino2onnx.passes.logger import debug, warning
-from openvino2onnx.passes.pattern import SingleNodePattern
+from ...graph import OnnxGraph
+from ...logger import debug, warning
+from .. import PASSES, Registry, Rewriter, get_pass_manager
+from ..pattern import SingleNodePattern
 
 INFERSHAPE_PATCH = Registry("INFERSHAPE_PATCH", parent=PASSES)
 
@@ -89,7 +98,7 @@ def infer_shape(
             model, input_dims=input_shapes, output_dims=output_shapes
         )
     model = shape_inference.infer_shapes(model, data_prop=True)
-    graph = OnnxGraph(model)
+    graph = OnnxGraph(model, base_dir=graph.external_base)
     # Patch for infer_shapes bugs
     pm = get_pass_manager(list(INFERSHAPE_PATCH))
     graph = pm.optimize(graph)
@@ -99,5 +108,5 @@ def infer_shape(
     if need_second_infer:
         model = graph.model
         model = shape_inference.infer_shapes(model, data_prop=True)
-        return OnnxGraph(model)
+        return OnnxGraph(model, base_dir=graph.external_base)
     return graph

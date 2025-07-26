@@ -1,8 +1,17 @@
 """
-Copyright Wenyi Tang 2024
+Copyright (C) 2024-2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from typing import List
@@ -11,11 +20,12 @@ import numpy as np
 from onnx.helper import tensor_dtype_to_np_dtype
 from onnx.onnx_pb import NodeProto
 
-from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes import PASSES, logger
-from openvino2onnx.passes.pattern import SingleNodePattern
-from openvino2onnx.passes.rewriter import Rewriter
-from openvino2onnx.passes.utils import make_constant
+from ... import logger
+from ...graph import OnnxGraph
+from .. import PASSES
+from ..pattern import SingleNodePattern
+from ..rewriter import Rewriter
+from ..utils import make_constant
 
 
 @PASSES.register(
@@ -54,7 +64,7 @@ class CanonicalizeNegativeZeroPointRewriter(Rewriter):
         qtype = tensor_dtype_to_np_dtype(graph.tensor_type(node.input[2]))
         bits = np.iinfo(qtype).bits
         qmax = 2**bits - 1
-        x_max = (qmax - zero_point) * scale
+        x_max = (qmax - zero_point.astype("int32")) * scale
         x_min = np.minimum((0 - zero_point) * scale, 0)  # x_min should below zero
         new_scale = (x_max - x_min) / qmax
         new_zero_point = np.maximum(zero_point, 0)

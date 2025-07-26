@@ -3,20 +3,21 @@ Copyright Wenyi Tang 2024-2025
 
 :Author: Wenyi Tang
 :Email: wenyitang@outlook.com
+
 """
 
 import re
 from abc import ABCMeta, abstractmethod
+from collections.abc import Sized
 from itertools import chain, product
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Sized
+from typing import Any, Dict, Iterable, List, Literal, Optional, Sequence, Set
 
 import networkx as nx
 from networkx.algorithms.isomorphism import DiGraphMatcher
 from onnx import AttributeProto, NodeProto
 from onnx.helper import get_attribute_value, make_attribute
 
-from openvino2onnx.graph import OnnxGraph
-
+from ..graph import OnnxGraph
 from .utils import attribute_value
 
 
@@ -81,12 +82,19 @@ class SingleNodePattern(Pattern):
         self.inputs: Optional[Sequence[str | None]] = None
         self.outputs: Optional[Sequence[str | None]] = None
         self.domain: Optional[str] = None
+        self.order: Optional[Literal["pre", "post"]] = None
         self.id = SingleNodePattern.__id__
         SingleNodePattern.__id__ += 1
 
     def match(self, graph: OnnxGraph):
         if isinstance(graph, OnnxGraph):
-            for node in graph:
+            if self.order == "pre":
+                node_gen = nx.topological_sort(graph)
+            elif self.order == "post":
+                node_gen = nx.topological_sort(graph.reverse(copy=False))
+            else:
+                node_gen = iter(graph)
+            for node in node_gen:
                 node_pb = graph.nodes[node]["pb"]
                 if self._check(node_pb, graph):
                     yield node_pb
@@ -248,6 +256,17 @@ class SingleNodePattern(Pattern):
                 regex rules.
         """
         self.domain = str(domain)
+        return self
+
+    def with_order(self, order: Literal["pre", "post"]) -> "SingleNodePattern":
+        """Match the node in specific order.
+
+        Args:
+            order (str):
+            - "pre" to match the node in topological order.
+            - "post" to match the node in reverse topological order.
+        """
+        self.order = order
         return self
 
 

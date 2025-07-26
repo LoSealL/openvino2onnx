@@ -1,19 +1,27 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2024 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from onnx import numpy_helper
 from onnx.helper import make_node
 from onnx.onnx_pb import NodeProto
-from openvino.runtime import Model, compile_model
-from openvino.runtime.opset8 import constant, prior_box_clustered
+from openvino import Model, compile_model
+from openvino.opset8 import constant, prior_box_clustered
 
-from openvino2onnx.domain.intel.openvino.utils import text_to_boolean
-from openvino2onnx.graph import OnnxGraph
-
+from ...utils import text_to_boolean
+from .. import OnnxGraph
 from . import OP_CONVERT, BaseNodeConversion
 
 
@@ -46,7 +54,7 @@ class PriorBoxClustered(BaseNodeConversion):
         output_size = constant(output_size, name="output_size")
         image_size = constant(image_size, name="image_size")
         pbc = prior_box_clustered(output_size, image_size, attrs)
-        model = Model([pbc], [])
+        model = Model([pbc], [])  # type: ignore
         compiled_model = compile_model(model, "CPU")
         value = compiled_model()[-1]
 

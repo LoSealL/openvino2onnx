@@ -1,8 +1,17 @@
 """
-Copyright Wenyi Tang 2024
+Copyright (C) 2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import logging
@@ -117,9 +126,15 @@ try:
 
     _HDL.setFormatter(
         colorlog.ColoredFormatter(
-            "[%(asctime)s]%(log_color)s[%(levelname)s] %(message)s"
+            "[%(asctime)s]%(log_color)s[%(name)s][%(levelname)s] %(message)s"
         )
     )
 except ImportError:
-    _HDL.setFormatter(Formatter("[%(asctime)s][%(levelname)s] %(message)s"))
+    _HDL.setFormatter(Formatter("[%(asctime)s][%(name)s][%(levelname)s] %(message)s"))
 _LOG.addHandler(_HDL)
+
+if os.environ.get("OPENVINO2ONNX_LOG_FILE"):
+    _FDL = logging.FileHandler(os.environ["OPENVINO2ONNX_LOG_FILE"], encoding="utf-8")
+    _FDL.setFormatter(Formatter("[%(asctime)s][%(name)s][%(levelname)s] %(message)s"))
+    _FDL.setLevel(_default_level_from_env())
+    _LOG.addHandler(_FDL)

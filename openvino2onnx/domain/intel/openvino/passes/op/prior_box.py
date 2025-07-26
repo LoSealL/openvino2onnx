@@ -1,20 +1,28 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2024 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 from onnx import numpy_helper
 from onnx.helper import make_node
 from onnx.mapping import TENSOR_TYPE_MAP
 from onnx.onnx_pb import NodeProto
-from openvino.runtime import Model, compile_model
-from openvino.runtime.opset8 import constant, prior_box
+from openvino import Model, compile_model
+from openvino.opset8 import constant, prior_box
 
-from openvino2onnx.domain.intel.openvino.utils import text_to_boolean
-from openvino2onnx.graph import OnnxGraph
-
+from ...utils import text_to_boolean
+from .. import OnnxGraph
 from . import OP_CONVERT, BaseNodeConversion
 
 
@@ -60,7 +68,7 @@ class PriorBox(BaseNodeConversion):
             assert isinstance(order, str)
             pb_attrs["min_max_aspect_ratios_order"] = text_to_boolean(order)
         prior_node = prior_box(layer_shape, image_shape, pb_attrs)
-        model = Model([prior_node], [])
+        model = Model([prior_node], [])  # type: ignore
         compiled_model = compile_model(model, "CPU")
         value = compiled_model()[-1]
         assert out_shape is not None and value.shape == tuple(out_shape)

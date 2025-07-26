@@ -1,24 +1,76 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import inspect
-from copy import deepcopy
 from pathlib import Path
-from typing import Callable, Dict, Iterator, List, Optional, Sequence, TypeVar, cast
+from typing import (
+    Callable,
+    Dict,
+    Generic,
+    Iterator,
+    List,
+    Optional,
+    Protocol,
+    Sequence,
+    Type,
+    TypeVar,
+    cast,
+)
 
 from tabulate import tabulate
 
+from ..traits import RewriterInterface
 from .auto_load import auto_load
 from .rewriter import Rewriter
 
+
+class GraphNode(Protocol):
+    """Any node to be registered in the Registry shall follow this protocol."""
+
+    __DEPS__: List[str]
+    __PATCHES__: List[str]
+
+
+T = TypeVar("T", bound=GraphNode)
 F = TypeVar("F", bound=Callable)
 
 
-class Registry:
+class FuncInterfaceWrapper(Generic[T]):
+
+    def __init__(
+        self,
+        func: Callable,
+        name: Optional[str],
+        deps: Optional[List[str]],
+        patches: Optional[List[str]],
+    ):
+        # pylint: disable=invalid-name
+        self.__FUNC = func
+        self.__NAME__ = name or func.__name__
+        self.__DEPS__ = deps or []
+        self.__PATCHES__ = patches or []
+        setattr(func, "__NAME__", self.__NAME__)
+        setattr(func, "__DEPS__", self.__DEPS__)
+        setattr(func, "__PATCHES__", self.__PATCHES__)
+
+    def __call__(self) -> T:
+        return cast(T, self.__FUNC)
+
+
+class Registry(Generic[T]):
     """A simple registry object to hold objects from others
 
     Samples::
@@ -36,18 +88,8 @@ class Registry:
         # └───────────────┘
     """
 
-    class _FuncWrapper:
-        def __init__(self, func):
-            self.func = func
-            self.__deps__ = func.__deps__
-            self.__patches__ = func.__patches__
-            self.__name__ = func.__name__
-
-        def __call__(self):
-            return self.func
-
-    def __init__(self, name=None, parent: Optional["Registry"] = None) -> None:
-        self._bucks: Dict[str, Registry._FuncWrapper] = {}
+    def __init__(self, name=None, parent: Optional["Registry[T]"] = None) -> None:
+        self._bucks: Dict[str, Type[T] | FuncInterfaceWrapper[T]] = {}
         self._configs: Dict = {}
         self._name = name or "<Registry>"
         self._parent = parent
@@ -70,7 +112,7 @@ class Registry:
 
     def register(
         self,
-        name=None,
+        name: Optional[str] = None,
         deps: Optional[List[str]] = None,
         patch: Optional[List[str]] = None,
     ):
@@ -89,28 +131,24 @@ class Registry:
                     "the object to be registered must be a function or Rewriter,"
                     f" got {type(func)}"
                 )
-            # set default dependency list to empty
-            setattr(func, "__deps__", deps or [])
-            setattr(func, "__patches__", patch or [])
             if inspect.isfunction(func):
-                func_wrap = self._FuncWrapper(func)
-                func_wrap.__name__ = name or func.__name__
-                self._bucks[func_wrap.__name__] = func_wrap
-                self._configs[func_wrap.__name__] = inspect.signature(func)
+                func_wrap = FuncInterfaceWrapper[T](func, name, deps, patch)
+                self._bucks[func_wrap.__NAME__] = func_wrap
+                self._configs[func_wrap.__NAME__] = inspect.signature(func)
             else:
-                obj = func()  # type: ignore
-                if not (hasattr(obj, "rewrite") and inspect.ismethod(obj.rewrite)):
+                assert isinstance(func, type)
+                if not issubclass(func, Rewriter):
                     raise TypeError(
                         f"the registered object {func} must be the subclass "
-                        "of openvino2onnx.passes.rewriter.Rewriter, but its mro is "
-                        f"{func.__mro__}"  # type: ignore
+                        f"of Rewriter, but its mro is {func.__mro__}"
                     )
-                assert isinstance(obj, Rewriter)
 
                 # note name is not saved because obj is gc-ed after this function
-                obj.__name__ = name or self._legal_name(func.__name__)
-                self._bucks[obj.__name__] = Registry._FuncWrapper(obj)
-                self._configs[obj.__name__] = inspect.signature(obj.rewrite)
+                func.__NAME__ = name or self._legal_name(func.__name__)
+                func.__DEPS__.extend(deps or [])
+                func.__PATCHES__.extend(patch or [])
+                self._bucks[func.__NAME__] = cast(Type[T], func)
+                self._configs[func.__NAME__] = inspect.signature(func.rewrite)
             if self._parent is not None:
                 self._parent.register(name, deps, patch)(func)
             # forward the signature of the original function
@@ -118,13 +156,11 @@ class Registry:
 
         return wrapper
 
-    def get(self, name: str) -> Optional[Callable]:
+    def get(self, name: str) -> Optional[T]:
         """Get a registered object by its name."""
         if name in self._bucks:
             functor = self._bucks[name]()  # create a new instance each time
-            if isinstance(functor, Rewriter):
-                functor = deepcopy(functor)
-            functor.__name__ = name  # rename the instance
+            # functor.__NAME__ = name  # rename the instance
             return functor
 
     def get_config(self, name: str):
@@ -142,7 +178,7 @@ class Registry:
         reg._configs = {k: self._configs[k] for k in passes}
         return reg
 
-    def __getitem__(self, name: str) -> Callable:
+    def __getitem__(self, name: str) -> T:
         """Get a registered object by its name."""
         obj = self.get(name)
         if obj is None:
@@ -164,8 +200,8 @@ class Registry:
             members.append(
                 [
                     i,
-                    self._bucks[i].__deps__,
-                    self._bucks[i].__patches__,
+                    self._bucks[i].__DEPS__,
+                    self._bucks[i].__PATCHES__,
                     self._configs[i],
                 ]
             )
@@ -179,17 +215,22 @@ def get_pass_manager(
 ):
     """Lazy load pass manager"""
     # pylint: disable=import-outside-toplevel
-    from openvino2onnx.pass_manager import PassManager
+    from ..pass_manager import PassManager
 
     return PassManager(include, exclude, configs)
 
 
-PASSES = Registry("PASS")
-L1 = Registry("L1", parent=PASSES)
-L2 = Registry("L2", parent=PASSES)
-L3 = Registry("L3", parent=PASSES)
+PASSES = Registry[RewriterInterface]("PASS")
+L1 = Registry[RewriterInterface]("L1", parent=PASSES)
+L2 = Registry[RewriterInterface]("L2", parent=PASSES)
+L3 = Registry[RewriterInterface]("L3", parent=PASSES)
 
+auto_load(Path(__file__).parent / "auto_tune")
 auto_load(Path(__file__).parent / "convert")
+auto_load(Path(__file__).parent / "dump")
+auto_load(Path(__file__).parent / "experiments")
+auto_load(Path(__file__).parent / "group")
 auto_load(Path(__file__).parent / "optimize")
 auto_load(Path(__file__).parent / "quantize")
+auto_load(Path(__file__).parent / "split")
 auto_load(Path(__file__).parent / "transform")

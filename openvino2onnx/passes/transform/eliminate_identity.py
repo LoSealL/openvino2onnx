@@ -1,8 +1,17 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 # pylint: disable=arguments-differ
@@ -11,56 +20,39 @@ from typing import List
 
 from onnx.onnx_pb import NodeProto
 
-from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes import L2
-from openvino2onnx.passes.pattern import SingleNodePattern
-from openvino2onnx.passes.rewriter import Rewriter
-from openvino2onnx.passes.utils import make_constant
+from ... import OnnxGraph
+from .. import L2
+from ..pattern import SingleNodePattern
+from ..rewriter import Rewriter
 
 
-@L2.register(name="eliminate_identity")
+@L2.register(name="eliminate_identity", deps=["replicate_identity_constant"])
 class EliminateIdentityRewriter(Rewriter):
-    """Eliminate Identity op.
-
-    Before:
-
-        constant -> identity -> fanout1
-                           | -> fanout2
-                           | -> ...
-
-    After:
-
-        constant_copy0 -> fanout1
-        constant_copy1 -> fanout2
-        constant_copy2 -> ...
-    """
+    """Remove Identity nodes."""
 
     def __init__(self):
         super().__init__(pattern=SingleNodePattern("Identity"))
 
     def rewrite(self, graph: OnnxGraph, nodes: List[NodeProto]):
         identity_node = nodes[0]
-        constant_node = self.get_input_node(identity_node, 0)
-        if constant_node is None:
-            # get value from initializer
-            value = self.get_value(identity_node.input[0])
-            fanout = 0
-        else:
-            value = self.get_value(constant_node)
-            fanout = len(graph.onnx_successors(constant_node))
-        if value is None:
-            return  # not a constant
-
-        for i, succ in enumerate(graph.onnx_successors(identity_node)):
-            pos = list(succ.input).index(identity_node.output[0])
-            # make a copy of constant
-            constant_copy_node = make_constant(
-                f"{identity_node.name}/constant_copy{i}",
-                value,
-            )
-            succ.input[pos] = constant_copy_node.output[0]
-            self += constant_copy_node
-
+        if graph.nodes[identity_node.name]["has_output"]:
+            prev_node = graph.onnx_predecessors(identity_node)[0]
+            for i, output_name in enumerate(prev_node.output):
+                if output_name == identity_node.input[0]:
+                    prev_node.output[i] = identity_node.output[0]
+            # Since identity's input is replaced by its output, every sibling node's
+            # input should also be replaced.
+            sibling_nodes = graph.onnx_siblings(identity_node)
+            for node in sibling_nodes:
+                for i, input_name in enumerate(node.input):
+                    if input_name == identity_node.input[0]:
+                        node.input[i] = identity_node.output[0]
+            # replace output node
+            graph.set_output(prev_node, identity_node.output[0])
+            self -= identity_node
+            return
+        for node in graph.onnx_successors(identity_node):
+            for i, input_name in enumerate(node.input):
+                if input_name == identity_node.output[0]:
+                    node.input[i] = identity_node.input[0]
         self -= identity_node
-        if fanout == 1 and isinstance(constant_node, NodeProto):
-            self -= constant_node

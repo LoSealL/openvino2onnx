@@ -1,18 +1,25 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2024-2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
 import numpy as np
 from onnx.helper import make_node, np_dtype_to_tensor_dtype
 from onnx.onnx_pb import NodeProto, TensorProto
 
-from openvino2onnx.domain.intel.openvino.ir.mapping import ETYPE2DTYPE
-from openvino2onnx.graph import OnnxGraph
-from openvino2onnx.passes.utils import cast_in
-
+from ...ir.mapping import ETYPE2DTYPE
+from .. import OnnxGraph, cast_in
 from . import OP_CONVERT, BaseNodeConversion
 
 
@@ -26,6 +33,7 @@ class Range(BaseNodeConversion):
     def replace(self, graph: OnnxGraph, ori_node: NodeProto) -> NodeProto:
         output_type = self.get_attribute(ori_node, "output_type")
         if output_type is not None:
+            assert isinstance(output_type, str)
             assert output_type in ETYPE2DTYPE, f"Unsupported output_type: {output_type}"
             output_type = ETYPE2DTYPE[output_type]
             output_dtype = np_dtype_to_tensor_dtype(np.dtype(output_type))

@@ -1,13 +1,25 @@
 """
-Copyright Wenyi Tang 2024-2025
+Copyright (C) 2024-2025 The OPENVINO2ONNX Authors.
 
-:Author: Wenyi Tang
-:Email: wenyitang@outlook.com
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 """
 
+import gc
 import os
+import traceback
 import warnings
 from copy import deepcopy
+from io import IOBase
 from itertools import chain
 from pathlib import Path
 from typing import IO, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -15,6 +27,7 @@ from uuid import uuid4
 
 import networkx as nx
 import onnx
+from onnx import external_data_helper as edh
 from onnx.helper import (
     make_graph,
     make_model,
@@ -25,11 +38,34 @@ from onnx.helper import (
     make_value_info,
 )
 
+from .logger import debug, error
+from .utils import chdir
+
+
+def _unique_opset(opset_import: Sequence[onnx.OperatorSetIdProto]):
+    domain_version: Dict[str, int] = {}
+    for opset in opset_import:
+        domain_version[opset.domain] = max(
+            domain_version.get(opset.domain, 1), opset.version
+        )
+    return [make_operatorsetid(k, v) for k, v in domain_version.items()]
+
 
 class OnnxGraph(nx.DiGraph):
-    """Create a DAG from onnx graph."""
+    """Create a DAG from onnx graph.
 
-    def __init__(self, model: Optional[onnx.ModelProto] = None) -> None:
+    Args:
+        model (onnx.ModelProto): use onnx.load_model to get the proto.
+        base_dir (str): If the model contains external data, specify the base directory
+            to load external data that relative to. If not specified, the current
+            working directory is used as the base directory.
+    """
+
+    def __init__(
+        self,
+        model: Optional[onnx.ModelProto] = None,
+        base_dir: Optional[str] = None,
+    ) -> None:
         if model is None:
             super().__init__()
         else:
@@ -57,6 +93,28 @@ class OnnxGraph(nx.DiGraph):
             for node in graph.node:
                 self._add_onnx_node_internal(node)
             self._build_edges()
+            # OnnxGraph save external tensors to one file, and this variable keeps
+            # the parent directory of the tensor file, which is used to specify
+            # a correct working directory when loading external data into onnx model.
+            self._external_base: Optional[str] = self._get_external_base(base_dir)
+
+    def _get_external_base(self, base_dir: str | None) -> str | None:
+        err_msg = ""
+        for t in self._get_all_tensors():
+            if edh.uses_external_data(t):
+                info = edh.ExternalDataInfo(t)
+                if base_dir is None:
+                    base_dir = info.basepath
+                elif info.basepath and base_dir != info.basepath:
+                    raise ValueError("External data have different base path!")
+                if not os.path.exists(os.path.join(base_dir, info.location)):
+                    err_msg += f"External {t.name} @{info.location} not found!\n"
+        if err_msg:
+            raise FileNotFoundError(err_msg)
+        if base_dir == "":
+            # WA: actually `basepath` is not used in current onnx
+            base_dir = Path.cwd().as_posix()
+        return base_dir
 
     def _add_onnx_node_internal(self, node: onnx.NodeProto) -> None:
         if not node.HasField("name"):
@@ -76,7 +134,7 @@ class OnnxGraph(nx.DiGraph):
             node = self.nodes[n]["pb"]
             for i in node.input:
                 if upstream := out_to_node.get(i):
-                    self.add_edge(upstream, n)
+                    self.add_edge(upstream, n, edge=i)
         self._out_to_node = out_to_node
 
     def add_onnx_node(self, node: onnx.NodeProto) -> None:
@@ -134,6 +192,45 @@ class OnnxGraph(nx.DiGraph):
         succs = self.successors(n if isinstance(n, str) else n.name)
         return [self.nodes[s]["pb"] for s in succs]
 
+    def onnx_siblings(self, n: onnx.NodeProto | str) -> List[onnx.NodeProto]:
+        r"""Returns a list of sibling nodes of n.
+
+        A sibling node is defined as a node that:
+        1. shares the same parent of `n`
+        2. shares at least one input of `n`
+
+        Example:
+
+              P
+              |  (e0)
+             / \
+            A   B
+
+            Say node A is the sibling of node B, and vice versa. The common edge
+            is [e0].
+        """
+        assert isinstance(n, (onnx.NodeProto, str))
+        parents_and_edges: Dict[onnx.NodeProto, str] = {}
+        if isinstance(n, str):
+            node_name = n
+        else:
+            node_name = n.name
+        for parent in self.onnx_predecessors(n):
+            edge_data = self.get_edge_data(parent.name, node_name)
+            parents_and_edges[parent] = str(edge_data["edge"])
+
+        def _child_and_edge(node: onnx.NodeProto, edge: str):
+            for child in self.onnx_successors(node):
+                if edge == self.get_edge_data(node.name, child.name).get("edge"):
+                    yield child
+
+        siblings: List[onnx.NodeProto] = []
+        for parent, edge in parents_and_edges.items():
+            for child in _child_and_edge(parent, edge):
+                if child.name != node_name:
+                    siblings.append(child)
+        return siblings
+
     def onnx_subgraph(self, nodes: Iterable[onnx.NodeProto | str]) -> "OnnxGraph":
         """Create a sub onnx graph from nodes"""
         sub: nx.DiGraph = self.subgraph(  # type: ignore
@@ -165,6 +262,9 @@ class OnnxGraph(nx.DiGraph):
                     for j in self.onnx_successors(node)
                     if j.name not in sub
                 )
+                # PR#176: if node is the output of the graph, we should not cut
+                # it and must keep this output in the subgraph
+                is_outside |= output_name in self.outputs
                 if sub.out_degree(i) == 0 or is_outside:
                     shape, dtype = self.tensor_info(output_name)
                     subonnx.output.append(
@@ -175,7 +275,8 @@ class OnnxGraph(nx.DiGraph):
             node_inputs = list(_compute_input(node))
             if node.op_type != "Constant" and node_inputs:
                 graph_inputs.update(node_inputs)
-        for input_name in graph_inputs:
+        sorted_graph_inputs = sorted(graph_inputs)
+        for input_name in sorted_graph_inputs:
             shape, dtype = self.tensor_info(input_name)
             subonnx.input.append(
                 make_value_info(input_name, make_tensor_type_proto(dtype, shape))
@@ -191,7 +292,7 @@ class OnnxGraph(nx.DiGraph):
             producer_version=self._model.producer_version,
             functions=self.functions.values(),
         )
-        return OnnxGraph(sub_model)
+        return OnnxGraph(sub_model, base_dir=self.external_base)
 
     def onnx_add_function(self, func: onnx.FunctionProto) -> None:
         """Add a function to the graph.
@@ -251,10 +352,12 @@ class OnnxGraph(nx.DiGraph):
     def static_tensor_shape(self, name: str) -> List[int]:
         """Get shape from a given tensor name, and ensure it is static."""
         shape = self.tensor_shape(name)
+        static_shape: List[int] = []
         for ind, i in enumerate(shape):
             if isinstance(i, str) or i < 1:
                 raise ValueError(f"shape[{ind}] is dynamic: {i}")
-        return shape  # type: ignore
+            static_shape.append(i)
+        return static_shape
 
     def tensor_type(self, name: str) -> int:
         """Get tensor type from a given tensor name."""
@@ -287,10 +390,12 @@ class OnnxGraph(nx.DiGraph):
         assert isinstance(node, onnx.NodeProto)
         if output_name not in node.output:
             raise ValueError(f"Can't find {output_name} in {node.name}")
-        if output_name in self.outputs:
-            return  # already output
+        replace = output_name in self.outputs
         shape, dtype = self.tensor_info(output_name)
+        if replace:
+            self.remove_output(output_name)
         self.outputs[output_name] = len(self.output)
+        self._out_to_node[output_name] = node.name
         if shape is None or dtype is None:
             raise ValueError(f"Can't find tensor shape and dtype of {output_name}")
         self.output.append(
@@ -441,6 +546,88 @@ class OnnxGraph(nx.DiGraph):
         return self._functions
 
     @property
+    def external_base(self) -> Optional[str]:
+        """Return the base directory of external data."""
+        return self._external_base
+
+    def _get_all_tensors(self) -> Iterable[onnx.TensorProto]:
+        # pylint: disable=protected-access
+        yield from self.initializer
+        for func in self.functions.values():
+            yield from edh._get_attribute_tensors_from_graph(func)
+        for name in self:
+            node: onnx.NodeProto = self.nodes[name]["pb"]
+            for attribute in node.attribute:
+                if attribute.HasField("t"):
+                    yield attribute.t
+                yield from attribute.tensors
+                yield from edh._recursive_attribute_processor(
+                    attribute, edh._get_initializer_tensors_from_graph
+                )
+                yield from edh._recursive_attribute_processor(
+                    attribute, edh._get_attribute_tensors_from_graph
+                )
+
+    def convert_tensors_to_external(
+        self,
+        location: str | os.PathLike | Path,
+        size_threshold: int = 1024,
+    ):
+        """Set all tensors with raw data as external data.
+
+        Args:
+            location (str | os.PathLike | Path): specify the external file to save to.
+            size_threshold (int): Threshold for size of data. Only when
+                tensor's data is >= the size_threshold it will be converted to external
+                data. To convert every tensor with raw data to external data set
+                size_threshold=0. Defaults to 1024.
+        """
+        location = Path(location)
+        if not self._external_base:
+            self._external_base = Path.cwd().as_posix()
+            if location.is_absolute():
+                self._external_base = location.parent.as_posix()
+        if location.is_absolute() and location.is_relative_to(self._external_base):
+            location = location.relative_to(self._external_base)
+        elif location.is_absolute():
+            raise ValueError(f"absolute location {location} must be relative to cwd.")
+        # recreate the file
+        with open(self._external_base / location, "wb"):
+            pass
+        for tensor in self._get_all_tensors():
+            if tensor.HasField("raw_data") and len(tensor.raw_data) >= size_threshold:
+                edh.set_external_data(tensor, location.as_posix())
+        for tensor in self._get_all_tensors():
+            if edh.uses_external_data(tensor) and tensor.HasField("raw_data"):
+                edh.save_external_data(tensor, self._external_base)
+                tensor.ClearField("raw_data")
+        # free memory
+        gc.collect()
+
+    def restore_tensors_from_external(self):
+        """Restore all external tensors into graph."""
+        if not self._external_base:
+            return
+
+        for tensor in self._get_all_tensors():
+            if edh.uses_external_data(tensor):
+                info = edh.ExternalDataInfo(tensor)
+                location = Path(self._external_base) / info.location
+                with open(location, "rb") as data_file:
+                    if info.offset:
+                        data_file.seek(info.offset)
+
+                    if info.length:
+                        tensor.raw_data = data_file.read(info.length)
+                    else:
+                        tensor.raw_data = data_file.read()
+                # After loading raw_data from external_data, change the state of tensors
+                tensor.data_location = onnx.TensorProto.DEFAULT
+                # and remove external data
+                del tensor.external_data[:]
+        self._external_base = None
+
+    @property
     def model(self) -> onnx.ModelProto:
         """Make new model"""
         graph = deepcopy(self._model.graph)
@@ -461,7 +648,7 @@ class OnnxGraph(nx.DiGraph):
             domain=self._model.domain,
             model_version=self._model.model_version,
             ir_version=self._model.ir_version,
-            opset_imports=self._model.opset_import,
+            opset_imports=_unique_opset(self._model.opset_import),
             producer_name=self._model.producer_name,
             producer_version=self._model.producer_version,
             functions=self._functions.values(),
@@ -474,10 +661,24 @@ class OnnxGraph(nx.DiGraph):
         self,
         model_path: str | os.PathLike | IO[bytes],
         format: Optional[str] = None,
+        save_as_external_data: bool = False,
         infer_shapes: bool = True,
         check: bool = True,
     ):
         """Serialize the graph to onnx model and save to model_path."""
+        if save_as_external_data:
+            if isinstance(model_path, (IO, IOBase)):
+                location = (
+                    self.name.replace(":", "_")
+                    .replace("/", "_")
+                    .replace("?", "")
+                    .replace("!", "")
+                    .replace(" ", "")
+                )
+            else:
+                location = Path(model_path).resolve().with_suffix("")
+            self.restore_tensors_from_external()
+            self.convert_tensors_to_external(location=location)
         if infer_shapes:
             # infer shape using infer_shape pass
             # pylint: disable=import-outside-toplevel
@@ -500,6 +701,11 @@ class OnnxGraph(nx.DiGraph):
         elif format == "onnxtxt":
             model_path = Path(model_path).with_suffix(".onnxtxt")
         if check:
-            onnx.checker.check_model(model, full_check=True)
+            with chdir(self.external_base):
+                try:
+                    onnx.checker.check_model(model, full_check=True)
+                except onnx.checker.ValidationError as ex:
+                    error(f"onnx check failed (use -vv to show tracebacks):\n{ex}\n")
+                    debug("\n".join(traceback.format_exception(ex)))
         onnx.save_model(model, model_path, format=format)
         return model_path
